@@ -110,11 +110,25 @@ def wood(name="Wood", preset="oak", varnish=0.6, wear=0.3, dust=0.0, scale=1.0, 
         # every board gets its own piece of the log
         jump = n.vmath("MULTIPLY", plank_rand, (37.3, 11.7, 23.1))
         base = n.vmath("ADD", base, jump)
+    else:
+        # solid tops are glued up from boards ~15 cm wide, each cut from a different part of the log, so a big
+        # table doesn't show one endless field of parallel rings. No gaps, just the grain changing at each joint.
+        glue = n.new("ShaderNodeTexBrick", Scale=1.0, _offset=0.0, _offset_frequency=1)
+        glue.inputs["Brick Width"].default_value = 60.0
+        glue.inputs["Row Height"].default_value = 0.11 + 0.08 * (seed % 1.0 if seed else 0.5)
+        glue.inputs["Mortar Size"].default_value = 0.0
+        glue.inputs["Bias"].default_value = 0.0
+        glue.inputs["Color1"].default_value = (0, 0, 0, 1)
+        glue.inputs["Color2"].default_value = (1, 1, 1, 1)
+        # shift so the (60 m apart) end joints never land on an object; only the long joints remain
+        n.link(n.vmath("ADD", base, (30.37, 0.0, 0.0)), None, glue, "Vector")
+        plank_rand = (glue, "Color")
+        base = n.vmath("ADD", base, n.vmath("MULTIPLY", plank_rand, (37.3, 11.7, 23.1)))
     # large-scale warp so growth rings meander
     warp_n = n.new("ShaderNodeTexNoise", Scale=1.1, Detail=5.0, Roughness=0.55)
     n.link(base, None, warp_n, "Vector")
     warp = n.vmath("MULTIPLY", n.vmath("SUBTRACT", (warp_n, "Color"), (0.5, 0.5, 0.5)),
-                   (0.0, 0.035 * (0.4 + p["figure"]), 0.035 * (0.4 + p["figure"])))
+                   (0.0, 0.055 * (0.4 + p["figure"]), 0.055 * (0.4 + p["figure"])))
     # the board is a slice through a log whose axis runs along X, offset so the heart isn't visible:
     # rings become long arches ("cathedrals") instead of parallel stripes
     log_axis = n.vmath("ADD", n.vmath("ADD", base, warp), (0.0, 0.31, 0.17))
@@ -125,8 +139,8 @@ def wood(name="Wood", preset="oak", varnish=0.6, wear=0.3, dust=0.0, scale=1.0, 
     rings.inputs["Detail Roughness"].default_value = 0.6
     n.link(stretch, None, rings, "Vector")
     # latewood bands are sharper, so push the saw profile through a curve
-    ring_curve = n.ramp((rings, "Fac"), [(0.0, (0, 0, 0)), (0.55, (0.15, 0.15, 0.15)), (0.85, (1, 1, 1)),
-                                         (1.0, (0.6, 0.6, 0.6))])
+    ring_curve = n.ramp((rings, "Fac"), [(0.0, (0, 0, 0)), (0.55, (0.1, 0.1, 0.1)), (0.86, (0.72, 0.72, 0.72)),
+                                         (1.0, (0.42, 0.42, 0.42))])
     # fine fibres / pores
     fib_map = n.vmath("MULTIPLY", base, (6.0, 420.0, 420.0))
     fibres = n.new("ShaderNodeTexNoise", Scale=1.0, Detail=4.0, Roughness=0.6)
@@ -138,10 +152,12 @@ def wood(name="Wood", preset="oak", varnish=0.6, wear=0.3, dust=0.0, scale=1.0, 
     n.link(base, None, big_var, "Vector")
     col2 = n.mix("RGBA", 0.25, (col, "Color"), (big_var, "Color"), blend="OVERLAY")
     if plank_rand is not None:
-        # boards differ in tone; the gaps between them are dark
-        tone = n.ramp(plank_rand, [(0.0, (0.78, 0.74, 0.7)), (1.0, (1.12, 1.08, 1.04))])
+        # boards differ in tone (glued-up tops only a little); the gaps between loose boards are dark
+        spread = ((0.78, 0.74, 0.7), (1.12, 1.08, 1.04)) if gaps is not None else ((0.9, 0.88, 0.86), (1.06, 1.05, 1.03))
+        tone = n.ramp(plank_rand, [(0.0, spread[0]), (1.0, spread[1])])
         col2 = n.mix("RGBA", 1.0, col2, (tone, "Color"), blend="MULTIPLY")
-        col2 = n.mix("RGBA", gaps, col2, srgb("#140c06"))   # brick Fac is 1 in the gaps
+        if gaps is not None:
+            col2 = n.mix("RGBA", gaps, col2, srgb("#140c06"))   # brick Fac is 1 in the gaps
     col3 = n.mix("RGBA", n.math("MULTIPLY", (pores, "Color"), p["fiber"]), col2, srgb(p["dark"]), blend="MULTIPLY")
     # wear: lighter, matte patches where hands rest
     wear_n = n.new("ShaderNodeTexNoise", Scale=2.5, Detail=8.0, Roughness=0.65)
