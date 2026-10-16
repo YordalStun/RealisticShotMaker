@@ -36,18 +36,28 @@ def _brick(name="Brick"):
     br.inputs["Color2"].default_value = srgb("#d9d1c3")
     br.inputs["Mortar"].default_value = srgb("#b9b0a2")
     n.link(mp, None, br, "Vector")
-    chip = n.new("ShaderNodeTexNoise", Scale=30.0, Detail=8.0)
+    # paint wears through on the odd brick edge, in small clusters
+    chip = n.new("ShaderNodeTexNoise", Scale=55.0, Detail=8.0)
     n.link(mp, None, chip, "Vector")
-    chips = n.ramp((chip, "Fac"), [(0.66, (0, 0, 0)), (0.7, (1, 1, 1))])
-    col = n.mix("RGBA", (chips, "Color"), (br, "Color"), srgb("#8a4a36"))
+    cluster = n.new("ShaderNodeTexNoise", Scale=2.5, Detail=1.0)
+    n.link(mp, None, cluster, "Vector")
+    chip_f = n.math("MULTIPLY", (chip, "Fac"), n.math("ADD", 0.72, n.math("MULTIPLY", (cluster, "Fac"), 0.45)))
+    chips = n.ramp(chip_f, [(0.62, (0, 0, 0)), (0.64, (1, 1, 1))])
+    # every brick takes the paint a little differently
+    tone = n.new("ShaderNodeTexNoise", Scale=4.0, Detail=2.0)
+    n.link(mp, None, tone, "Vector")
+    shade = n.mix("RGBA", (tone, "Fac"), srgb("#d8d0c2"), srgb("#efe9df"))
+    painted = n.mix("RGBA", 0.5, (br, "Color"), shade, blend="MULTIPLY")
+    painted = n.mix("RGBA", 0.6, painted, (br, "Color"))
+    col = n.mix("RGBA", (chips, "Color"), painted, srgb("#9a5a44"))
     b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.85)
     n.link(col, None, b, "Base Color")
     bump = n.new("ShaderNodeBump", Strength=0.6, Distance=0.004)
     n.link(n.math("SUBTRACT", 1.0, (br, "Fac")), None, bump, "Height")
-    rough_n = n.new("ShaderNodeTexNoise", Scale=200.0, Detail=4.0)
+    rough_n = n.new("ShaderNodeTexNoise", Scale=140.0, Detail=6.0, Roughness=0.65)
     n.link(mp, None, rough_n, "Vector")
-    bump2 = n.new("ShaderNodeBump", Strength=0.15, Distance=0.001)
-    n.link(rough_n, "Fac", bump2, "Height")
+    bump2 = n.new("ShaderNodeBump", Strength=0.35, Distance=0.0015)
+    n.link(n.math("ADD", (rough_n, "Fac"), n.math("MULTIPLY", (chips, "Color"), -0.4)), None, bump2, "Height")
     n.link(bump, None, bump2, "Normal")
     n.link(bump2, None, b, "Normal")
     out = n.new("ShaderNodeOutputMaterial")
@@ -134,8 +144,10 @@ def build(ctx: Ctx):
                      12, rot=(math.radians(90), 0, 0))
         at = sagging_line(f"Line{r_i}", col, a, b, sag, mat=twine)
         if lights_on and not darkroom:
-            fairy_lights(col, [at(k / 6) + Vector((0, -0.01, -0.012)) for k in range(7)], 34, rng,
-                         name=f"LineFairy{r_i}")
+            # wound along the twine just behind the prints: the bulbs glow between them and peek over
+            # their top edges instead of hanging across the pictures
+            fairy_lights(col, [at(k / 6) + Vector((0, 0.014, 0.008)) for k in range(7)], 34, rng,
+                         name=f"LineFairy{r_i}", sag=0.006)
         slots = [0.12, 0.27, 0.42, 0.58, 0.73, 0.88]
         if r_i == hero_row:
             hero_slot = 2

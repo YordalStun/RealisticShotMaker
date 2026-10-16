@@ -615,7 +615,7 @@ def cobweb_strands(col, anchors_pairs, rng, name="Cobweb"):
     return objs
 
 
-def fairy_lights(col, points: list, count: int, rng, kelvin=2400.0, strength=30.0, name="FairyLights"):
+def fairy_lights(col, points: list, count: int, rng, kelvin=2400.0, strength=30.0, name="FairyLights", sag=0.03):
     """A string of tiny warm bulbs following a polyline (with sag between points)."""
     from .. import materials as M
     from ..util import cylinder_bm
@@ -627,7 +627,7 @@ def fairy_lights(col, points: list, count: int, rng, kelvin=2400.0, strength=30.
         a, b2 = points[i], points[i + 1]
         for k in range(12):
             t = k / 12
-            pts.append(a.lerp(b2, t) - Vector((0, 0, 0.03 * 4 * t * (1 - t))))
+            pts.append(a.lerp(b2, t) - Vector((0, 0, sag * 4 * t * (1 - t))))
     pts.append(points[-1])
     sp.points.add(len(pts) - 1)
     for k, p in enumerate(pts):
