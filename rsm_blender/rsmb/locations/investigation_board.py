@@ -169,8 +169,8 @@ def _board_glass(seed: float = 0.0):
     # dust specks: tiny dots in a small fraction of cells
     vor = n.new("ShaderNodeTexVoronoi", Scale=650.0)
     n.link(mapped((1, 1, 1)), None, vor, "Vector")
-    speck = n.math("LESS_THAN", (vor, "Distance"), 0.09)
-    pick = n.math("GREATER_THAN", (vor, "Color"), 0.82)
+    speck = n.math("LESS_THAN", (vor, "Distance"), 0.11)
+    pick = n.math("GREATER_THAN", (vor, "Color"), 0.78)
     dust = n.math("MULTIPLY", speck, pick)
 
     # hairline scratches: edges of long thin voronoi cells, only in a couple of places
@@ -182,10 +182,10 @@ def _board_glass(seed: float = 0.0):
     where_m = n.ramp((where, "Fac"), [(0.66, (0, 0, 0)), (0.72, (1, 1, 1))])
     scratch = n.math("MULTIPLY", line, (where_m, "Color"))
 
-    rough = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.14), n.math("MULTIPLY", ghost, 0.07)),
-                   n.math("MULTIPLY", scratch, 0.3))
-    haze = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.025), n.math("MULTIPLY", ghost, 0.035)),
-                  n.math("ADD", n.math("MULTIPLY", dust, 0.5), n.math("MULTIPLY", scratch, 0.12)), clamp=True)
+    rough = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.22), n.math("MULTIPLY", ghost, 0.1)),
+                   n.math("MULTIPLY", scratch, 0.35))
+    haze = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.06), n.math("MULTIPLY", ghost, 0.07)),
+                  n.math("ADD", n.math("MULTIPLY", dust, 0.7), n.math("MULTIPLY", scratch, 0.25)), clamp=True)
 
     # very slight roller wave in the float glass: bends reflections, never the view through it
     wave = n.new("ShaderNodeTexNoise", Scale=0.7, Detail=1.0)

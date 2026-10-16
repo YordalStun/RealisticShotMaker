@@ -137,6 +137,51 @@ def configure(resolved: dict, cam_spec: dict, body: dict, scene=None):
     im.color_mode = "RGB"
 
 
+def configure_eevee(resolved: dict, scene=None) -> bool:
+    """Switch to EEVEE for fast drafts: rasterised, with screen-space reflections and bounce light standing in
+    for real ray tracing. Returns False if this Blender has no EEVEE (the draft then stays on Cycles)."""
+    scene = scene or bpy.context.scene
+    r = scene.render
+    for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+        try:
+            r.engine = eng
+            break
+        except TypeError:
+            continue
+    else:
+        return False
+    e = scene.eevee
+
+    def set_(attr, val):
+        try:
+            setattr(e, attr, val)
+        except (AttributeError, TypeError):
+            pass
+    set_("taa_render_samples", max(8, int(resolved["samples"])))
+    set_("use_shadows", True)
+    set_("shadow_ray_count", 1)
+    set_("shadow_step_count", 4)
+    set_("use_raytracing", True)            # screen-space only: reflections and refraction through glass
+    set_("ray_tracing_method", "SCREEN")
+    set_("use_fast_gi", True)               # approximate bounce light from what's on screen
+    set_("fast_gi_method", "GLOBAL_ILLUMINATION")
+    set_("use_volumetric_shadows", True)
+    set_("volumetric_tile_size", "8")
+    set_("volumetric_samples", 48)
+    set_("use_gtao", True)
+    set_("motion_blur_steps", 1)
+    for mat in bpy.data.materials:            # let glass show what's behind it rather than the sky
+        for attr in ("use_raytrace_refraction", "use_screen_refraction"):
+            try:
+                setattr(mat, attr, True)
+            except AttributeError:
+                pass
+    for ob in bpy.data.objects:               # window portals are a Cycles idea; EEVEE would light them up
+        if ob.type == "LIGHT" and getattr(ob.data.cycles, "is_portal", False):
+            ob.hide_render = True
+    return True
+
+
 def render_frames(frames_dir: str, frame_start: int, frame_end: int, only: list[int] | None = None,
                   overwrite: bool = False):
     """Render one EXR per frame into frames_dir/frame_#####.exr. Existing frames are skipped (resume)."""

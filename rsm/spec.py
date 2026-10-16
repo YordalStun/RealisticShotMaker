@@ -118,6 +118,7 @@ class OutputSpec:
     name: str = "shot"
     keep_frames: bool = True
     frame_format: str = "png16"       # png16 | exr
+    engine: str = "cycles"            # cycles (path traced) | eevee (fast rasterised drafts)
 
 
 @dataclass

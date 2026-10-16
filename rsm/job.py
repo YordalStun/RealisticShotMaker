@@ -29,7 +29,8 @@ def resolve(spec: ShotSpec) -> dict:
     samples = out.custom_samples if out.custom_samples > 0 else q.samples
     return dict(width=w, height=h, fps=fps, frame_start=1, frame_end=n_frames, samples=samples,
                 noise_threshold=q.noise_threshold, max_bounces=q.max_bounces,
-                volume_step_rate=max(0.25, q.volume_step * 20), volumetrics=True, quality=q.id)
+                volume_step_rate=max(0.25, q.volume_step * 20), volumetrics=True, quality=q.id,
+                engine="eevee" if out.engine == "eevee" else "cycles")
 
 
 def sensor_for(spec: ShotSpec) -> tuple[float, float]:

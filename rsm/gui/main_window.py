@@ -15,10 +15,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QListWidget, QListWidgetItem, 
                                QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
 from .. import __version__, catalog
-from ..blender_locator import download_blender, find_blender
+from ..blender_locator import app_data_dir, download_blender, find_blender
+from ..estimate import estimate
 from ..spec import ShotSpec
+from .draft_player import DraftPlayer
 from .fields import SECTIONS, Field, get_attr, set_attr
 from .preview_popup import MoveHoverWatcher, PreviewPopup
+from .render_queue import QueuePanel, RenderQueue, power_action
 from .widgets import ColorButton, FolderPicker, ImageView, PhotoPicker, SliderField
 from .workers import JobThread, PolaroidPreview, RenderJob
 
@@ -83,10 +86,14 @@ class MainWindow(QMainWindow):
         self.blender = self.settings.value("blender_path", "") or os.environ.get("RSM_BLENDER", "")
         self._preview_ticket = 0
         self._preview_threads: list[PolaroidPreview] = []
-        self.queue: list[RenderJob] = []
         self.threads: dict[int, JobThread] = {}
-        self.running: RenderJob | None = None
         self.still_job: RenderJob | None = None
+        self.draft_job: RenderJob | None = None
+        self._draft_ticket = 0
+        self.rq = RenderQueue(lambda: self.blender if self.blender and os.path.exists(self.blender) else "",
+                              app_data_dir() / "queue.json", self)
+        self.rq.frame_ready.connect(lambda item, path: self.monitor.set_image(path))
+        self.rq.all_done.connect(self._queue_finished)
         self.bridge = _Bridge()
         self.bridge.blender_found.connect(self._on_blender_found)
         self.bridge.download_progress.connect(lambda f, m: self.blender_label.setText(m))
@@ -99,6 +106,9 @@ class MainWindow(QMainWindow):
         self.bridge.preview_progress.connect(lambda m: self.blender_label.setText(m))
         self.bridge.previews_done.connect(self._previews_done)
         self._preview_build_running = False
+        self._draft_timer = QTimer(self)
+        self._draft_timer.setSingleShot(True)
+        self._draft_timer.timeout.connect(lambda: self.start_draft(manual=False))
         self._load_into_widgets()
         self._schedule_polaroid_preview()
         QTimer.singleShot(200, self._locate_blender)
@@ -145,6 +155,21 @@ class MainWindow(QMainWindow):
             if section == "Camera":
                 self.tabs.addTab(self._build_fun_tab(), "Fun moves")
 
+        self.draft_player = DraftPlayer()
+        self.draft_player.make_requested.connect(lambda: self.start_draft(manual=True))
+        self.draft_player.auto_changed.connect(lambda on: on and self._schedule_draft())
+        self.draft_player.auto.setChecked(self.settings.value("auto_draft", "true") == "true")
+        self.draft_player.auto_changed.connect(lambda on: self.settings.setValue("auto_draft", "true" if on else "false"))
+        self.draft_player.engine.setCurrentIndex(max(0, self.draft_player.engine.findData(
+            self.settings.value("draft_engine", "eevee"))))
+        self.draft_player.engine_changed.connect(lambda e: (self.settings.setValue("draft_engine", e),
+                                                            self._schedule_draft()))
+        editor = QWidget()
+        el = QVBoxLayout(editor)
+        el.setContentsMargins(0, 0, 0, 0)
+        el.addWidget(self.draft_player)
+        el.addWidget(self.tabs, 1)
+
         # monitor + polaroid
         self.monitor = ImageView("Press “Preview frame” to see a quick render of your shot.\n\n"
                                  "Final renders are path traced at full quality and can take hours.")
@@ -167,11 +192,10 @@ class MainWindow(QMainWindow):
         self.time_slider.valueChanged.connect(self._time_changed)
         self.preview_btn = QPushButton("Preview frame")
         self.preview_btn.clicked.connect(self.preview_frame)
-        self.draft_btn = QPushButton("Draft video")
-        self.draft_btn.setToolTip("A fast, low-resolution render of the whole move to check timing and framing.")
-        self.draft_btn.clicked.connect(lambda: self.queue_render(draft=True))
-        self.render_btn = QPushButton("Render video")
+        self.render_btn = QPushButton("Add to render queue")
         self.render_btn.setObjectName("Primary")
+        self.render_btn.setToolTip("Queue this shot for a full-quality render. Add as many as you like; they render "
+                                   "one after another.")
         self.render_btn.clicked.connect(lambda: self.queue_render())
         self.estimate_label = QLabel("")
         self.estimate_label.setObjectName("Caption")
@@ -181,43 +205,27 @@ class MainWindow(QMainWindow):
         ctrl.addWidget(self.time_label)
         ctrl.addSpacing(12)
         ctrl.addWidget(self.preview_btn)
-        ctrl.addWidget(self.draft_btn)
         ctrl.addWidget(self.render_btn)
 
         # queue
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Shot", "Status", "Progress", "Time left", "Output"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.table.setColumnWidth(2, 180)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        qbtns = QHBoxLayout()
-        self.cancel_btn = QPushButton("Cancel selected")
-        self.cancel_btn.clicked.connect(self.cancel_selected)
-        self.open_btn = QPushButton("Open output folder")
-        self.open_btn.clicked.connect(self.open_selected)
-        self.regrade_btn = QPushButton("Regrade selected")
-        self.regrade_btn.setToolTip("Apply the current Look settings to a finished render without re-rendering it.")
-        self.regrade_btn.clicked.connect(self.regrade_selected)
-        qbtns.addWidget(QLabel("Render queue"))
-        qbtns.addStretch(1)
-        qbtns.addWidget(self.cancel_btn)
-        qbtns.addWidget(self.regrade_btn)
-        qbtns.addWidget(self.open_btn)
+        self.queue_panel = QueuePanel(self.rq)
+        self.queue_panel.load_requested.connect(self._load_spec)
+        self.queue_panel.regrade_requested.connect(self._regrade)
+        self.queue_panel.when_done.setCurrentIndex(max(0, self.queue_panel.when_done.findData(
+            self.settings.value("when_queue_done", "nothing"))))
+        self.queue_panel.when_done.currentIndexChanged.connect(
+            lambda _: self.settings.setValue("when_queue_done", self.queue_panel.when_done.currentData()))
 
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.addLayout(top, 3)
         rl.addLayout(ctrl)
         rl.addWidget(self.estimate_label)
-        rl.addLayout(qbtns)
-        rl.addWidget(self.table, 1)
+        self.queue_panel.setMinimumHeight(230)
+        rl.addWidget(self.queue_panel, 2)
 
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(self.tabs)
+        split.addWidget(editor)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
         split.setSizes([480, 1080])
@@ -462,6 +470,7 @@ class MainWindow(QMainWindow):
     def _loc_opt(self, key, value):
         self.spec.scene.options[key] = value
         self._update_estimate()
+        self._schedule_draft()
 
     def _changed(self, f: Field, value):
         if getattr(self, "_loading", False) or value == "__fun__":
@@ -500,6 +509,8 @@ class MainWindow(QMainWindow):
             self.settings.setValue("output_dir", value)
         if f.path.startswith("polaroid."):
             self._schedule_polaroid_preview()
+        if not f.path.startswith("output."):
+            self._schedule_draft()
         self.estimate_label.setWordWrap(True)
         self._update_estimate()
 
@@ -510,10 +521,7 @@ class MainWindow(QMainWindow):
         if not res or not q:
             return
         samples = self.spec.output.custom_samples or q.samples
-        mpix = res[1] * res[2] / 1e6
-        # rough guide for an RTX 4080/5080 class card with this kind of interior scene
-        sec_per_frame = mpix * samples / 1024 * 9.0 * (1.6 if self.spec.scene.light_shafts > 0.05 else 1.0)
-        total = sec_per_frame * frames
+        sec_per_frame, total, frames = estimate(self.spec)
         text = (f"{frames} frames at {res[1]}×{res[2]}, {samples} samples per pixel. "
                 f"Rough estimate on a high-end graphics card: about {fmt_time(sec_per_frame)} per frame, "
                 f"{fmt_time(total)} in total.")
@@ -587,6 +595,12 @@ class MainWindow(QMainWindow):
             self.blender = path
             self.settings.setValue("blender_path", path)
             self.blender_label.setText(f"Blender {ver} ready: {path}" if ver else f"Blender: {path}")
+            left_over = [i for i in self.rq.items if i.state in ("waiting", "stopped")]
+            if left_over and not self.rq.active:
+                self.blender_label.setText(self.blender_label.text() + f"   ·   {len(left_over)} shot(s) from last "
+                                           "time are in the render queue: press Start queue to carry on.")
+            self.rq.pump()
+            self._schedule_draft()
         else:
             self.blender_label.setText("Blender 4.5 or newer was not found. Use the Blender menu to download or "
                                        "locate it.")
@@ -692,120 +706,125 @@ class MainWindow(QMainWindow):
     def _work_root(self) -> str:
         return self.spec.output.output_dir or str(Path.home() / "Videos" / "RealisticShotMaker")
 
-    def queue_render(self, draft: bool = False):
+    def queue_render(self):
         if not self._need_blender():
             return
-        spec = self.spec.copy()
-        if draft:
-            spec.output.resolution = "preview"
-            spec.output.quality = "draft"
-            spec.output.custom_samples = 0
-            spec.output.codec = "h264"
-            spec.output.name = f"{spec.output.name}_draft"
-        job = RenderJob(spec, self.blender, "video")
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        name = f"{spec.output.name} · {catalog.option_name(catalog.LOCATIONS, spec.scene.location)}"
-        self.table.setItem(row, 0, QTableWidgetItem(name))
-        self.table.setItem(row, 1, QTableWidgetItem("Waiting"))
-        bar = QProgressBar()
-        bar.setRange(0, 1000)
-        self.table.setCellWidget(row, 2, bar)
-        self.table.setItem(row, 3, QTableWidgetItem("–"))
-        self.table.setItem(row, 4, QTableWidgetItem(""))
-        job.row = row
-        job.updated.connect(lambda p, job=job: self._job_update(job, p))
-        job.finished.connect(lambda ok, msg, job=job: self._job_finished(job, ok, msg))
-        job.frame_ready.connect(lambda path: self.monitor.set_image(path))
-        self.queue.append(job)
-        self._pump()
+        item = self.rq.add(self.spec)
+        when = "now" if self.rq.active and self.rq.running() is item else (
+            "when the shots ahead of it finish" if self.rq.active else "when you press Start queue")
+        self.blender_label.setText(f"“{item.title}” added to the render queue. It renders {when}.")
 
-    def _pump(self):
-        if self.running is not None:
-            return
-        for job in self.queue:
-            if getattr(job, "state", "waiting") == "waiting":
-                job.state = "running"
-                self.running = job
-                th = JobThread(job)
-                self.threads[id(job)] = th
-                th.start()
-                return
-
-    def _job_update(self, job: RenderJob, p):
-        row = job.row
-        self.table.item(row, 1).setText(p.message or p.stage)
-        bar: QProgressBar = self.table.cellWidget(row, 2)
-        bar.setValue(int(p.fraction * 1000))
-        bar.setFormat(f"{p.done}/{p.total} frames" if p.total else "")
-        self.table.item(row, 3).setText(fmt_time(p.eta))
-
-    def _job_finished(self, job: RenderJob, ok: bool, msg: str):
-        job.state = "done" if ok else "failed"
-        row = job.row
-        self.table.item(row, 1).setText("Finished" if ok else msg)
-        if ok:
-            self.table.cellWidget(row, 2).setValue(1000)
-            self.table.item(row, 4).setText(msg)
-            self.table.item(row, 3).setText("")
-        self.running = None
-        self._pump()
-
-    def _selected_job(self) -> RenderJob | None:
-        rows = {i.row() for i in self.table.selectedIndexes()}
-        for job in self.queue:
-            if job.row in rows:
-                return job
-        return None
-
-    def cancel_selected(self):
-        job = self._selected_job()
-        if job:
-            if getattr(job, "state", "") == "waiting":
-                job.state = "cancelled"
-                self.table.item(job.row, 1).setText("Cancelled")
-            else:
-                job.cancel()
-
-    def regrade_selected(self):
-        src = self._selected_job()
-        if not src or getattr(src, "state", "") != "done" or not src.job_path:
-            QMessageBox.information(self, "Regrade", "Select a finished render in the queue first.")
+    def _regrade(self, src):
+        if not src.job_path:
             return
         if not src.spec.output.keep_frames:
             QMessageBox.information(self, "Regrade", "That render didn't keep its HDR frames, so it can't be regraded.")
             return
         spec = src.spec.copy()
         spec.look = self.spec.copy().look
-        job = RenderJob(spec, self.blender, "regrade", job_path=src.job_path)
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(f"{spec.output.name} · regrade"))
-        self.table.setItem(row, 1, QTableWidgetItem("Waiting"))
-        bar = QProgressBar()
-        bar.setRange(0, 1000)
-        self.table.setCellWidget(row, 2, bar)
-        self.table.setItem(row, 3, QTableWidgetItem("–"))
-        self.table.setItem(row, 4, QTableWidgetItem(""))
-        job.row = row
-        job.updated.connect(lambda p, job=job: self._job_update(job, p))
-        job.finished.connect(lambda ok, msg, job=job: self._job_finished(job, ok, msg))
-        self.queue.append(job)
-        self._pump()
+        self.rq.add(spec, "regrade", src.job_path)
 
-    def open_selected(self):
-        job = self._selected_job()
-        folder = None
-        if job and job.job_path:
-            folder = str(Path(job.job_path).parent)
-        folder = folder or self._work_root()
-        os.makedirs(folder, exist_ok=True)
-        if sys.platform == "win32":
-            os.startfile(folder)  # noqa: S606
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", folder])
-        else:
-            subprocess.Popen(["xdg-open", folder])
+    def _queue_finished(self):
+        self.blender_label.setText("Render queue finished.")
+        kind = self.queue_panel.when_done.currentData()
+        if kind not in ("sleep", "shutdown") or sys.platform != "win32":
+            return
+        what = "go to sleep" if kind == "sleep" else "shut down"
+        box = QMessageBox(QMessageBox.Information, "Render queue finished",
+                          f"Every shot has rendered. The PC will {what} in 60 seconds.", QMessageBox.Cancel, self)
+        left = {"s": 60}
+
+        def tick():
+            left["s"] -= 1
+            box.setText(f"Every shot has rendered. The PC will {what} in {left['s']} seconds.")
+            if left["s"] <= 0:
+                timer.stop()
+                box.done(QMessageBox.Ok)
+        timer = QTimer(box)
+        timer.timeout.connect(tick)
+        timer.start(1000)
+        if box.exec() == QMessageBox.Ok:
+            power_action(kind)
+
+    def _load_spec(self, spec: ShotSpec):
+        self.spec = spec
+        self._load_into_widgets()
+        self._schedule_polaroid_preview()
+        self._schedule_draft()
+
+    # ------------------------------------------------------------------ draft preview
+    def _schedule_draft(self):
+        if getattr(self, "_loading", False) or not hasattr(self, "draft_player"):
+            return
+        if self.draft_player.auto.isChecked():
+            self._draft_timer.start(2500)
+
+    def draft_spec(self) -> ShotSpec:
+        s = self.spec.copy()
+        s.output.engine = self.draft_player.engine.currentData() or "eevee"
+        s.output.resolution = "p360"
+        s.output.quality = "draft"
+        s.output.custom_samples = 16 if s.output.engine == "cycles" else 24
+        s.output.fps = 12.0
+        s.output.codec = "png_seq"
+        s.output.keep_frames = False
+        s.output.name = "draft"
+        s.output.output_dir = str(app_data_dir() / "drafts")
+        return s
+
+    def start_draft(self, manual: bool = False):
+        if not (self.blender and os.path.exists(self.blender)):
+            if manual:
+                self._need_blender()
+            else:
+                self.draft_player.set_status("Drafts need Blender. Use the Blender menu to download or find it.")
+            return
+        if not manual and self.rq.running() is not None:
+            self.draft_player.set_status("Auto drafts wait while the queue is rendering (they'd share the "
+                                         "graphics card). Press Make draft to render one anyway.")
+            return
+        if self.draft_job is not None:
+            self.draft_job.cancel()
+        self._draft_ticket += 1
+        ticket = self._draft_ticket
+        spec = self.draft_spec()
+        self._clean_old_drafts()
+        job = RenderJob(spec, self.blender, "draft")
+        self.draft_job = job
+        self.draft_player.begin(estimate(spec)[2], spec.output.fps)
+
+        def upd(p, t=ticket):
+            if t != self._draft_ticket:
+                return
+            if p.total:
+                self.draft_player.set_status(f"Draft: {p.done}/{p.total} frames" if p.done < p.total else "")
+            elif p.message:
+                self.draft_player.set_status(p.message)
+
+        def frame(path, t=ticket):
+            if t == self._draft_ticket:
+                self.draft_player.add_frame(path)
+
+        def done(ok, msg, t=ticket):
+            if t != self._draft_ticket:
+                return
+            self.draft_job = None
+            self.draft_player.finish(ok, "" if ok else ("Draft failed: " + msg))
+        job.updated.connect(upd)
+        job.frame_ready.connect(frame)
+        job.finished.connect(done)
+        th = JobThread(job)
+        self.threads[id(job)] = th
+        th.start()
+
+    def _clean_old_drafts(self):
+        import shutil
+        root = app_data_dir() / "drafts"
+        if not root.is_dir():
+            return
+        for d in root.iterdir():
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
 
     # ------------------------------------------------------------------ files and presets
     def new_shot(self):
@@ -814,6 +833,7 @@ class MainWindow(QMainWindow):
         self.current_file = None
         self._load_into_widgets()
         self._schedule_polaroid_preview()
+        self._schedule_draft()
 
     def open_shot(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open shot", "", "Shot files (*.rsm.json *.json)")
@@ -826,6 +846,7 @@ class MainWindow(QMainWindow):
             self.current_file = path
             self._load_into_widgets()
             self._schedule_polaroid_preview()
+            self._schedule_draft()
 
     def save_shot(self, save_as=False):
         path = self.current_file
@@ -845,6 +866,7 @@ class MainWindow(QMainWindow):
             for k, v in values.items():
                 setattr(obj, k, v)
         self._load_into_widgets()
+        self._schedule_draft()
         self.preset_combo.blockSignals(True)
         self.preset_combo.setCurrentIndex(0)
         self.preset_combo.blockSignals(False)
@@ -856,12 +878,14 @@ class MainWindow(QMainWindow):
                           "Sample photos: CC0.")
 
     def closeEvent(self, ev):
-        running = [j for j in self.queue if getattr(j, "state", "") == "running"]
-        if running and QMessageBox.question(self, "Renders running",
-                                            "A render is still running. Stop it and quit? Finished frames are kept.") \
-                != QMessageBox.Yes:
+        r = self.rq.running()
+        if r is not None and QMessageBox.question(
+                self, "Render running",
+                "A shot is still rendering. Stop it and quit? Its finished frames are kept, and the queue "
+                "carries on from there next time.") != QMessageBox.Yes:
             ev.ignore()
             return
-        for j in running:
-            j.cancel()
+        if self.draft_job is not None:
+            self.draft_job.cancel()
+        self.rq.shutdown()
         ev.accept()
