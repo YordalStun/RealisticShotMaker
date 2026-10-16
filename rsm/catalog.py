@@ -281,7 +281,7 @@ MOODS: dict[str, Mood] = {m.id: m for m in [
     Mood("noir_blinds", "Noir: light through blinds", "Hard light through venetian blinds throws stripes "
          "across the photo and the room. Classic film noir.", 0.6, True, 1.7),
     Mood("bare_bulb", "Bare bulb, swinging", "A bare bulb on a flex above the photo, swaying slowly so the "
-         "shadows move with it.", 0.55, True, 1.5),
+         "shadows move with it.", 0.55, True, 1.8),
     Mood("torch", "Torch in the dark", "Pitch dark. Someone beside the camera searches with a torch; the beam "
          "cuts through the haze and finds the photo.", 0.6, True, 1.9),
     Mood("candle", "Single candle", "Only a candle just out of shot: warm, low and flickering.", 0.45, True, 1.5),
