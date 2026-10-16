@@ -268,33 +268,34 @@ TIMES_OF_DAY = {
 
 @dataclass(frozen=True)
 class Mood(Option):
-    key: float = 0.0       # how bright the photo sits after exposure (0 = follow the time of day)
+    key: float = 0.0       # dark moods: how bright the lit part of the photo sits (linear); the rest falls away
     dark: bool = False     # replaces the daylight with its own lights
+    low_key: float = 1.5   # how hard everything below the highlights is pushed towards black (1 = not at all)
 
 
 MOODS: dict[str, Mood] = {m.id: m for m in [
     Mood("natural", "Natural (time of day)", "Light from the window and the room's own lamps, set by the time "
          "of day."),
     Mood("low_key", "Low key: one hard light", "A single hard light from high on one side. Deep shadows; "
-         "everything it doesn't touch falls to black.", 0.07, True),
+         "everything it doesn't touch falls to black.", 0.55, True, 1.8),
     Mood("noir_blinds", "Noir: light through blinds", "Hard light through venetian blinds throws stripes "
-         "across the photo and the room. Classic film noir.", 0.075, True),
+         "across the photo and the room. Classic film noir.", 0.6, True, 1.7),
     Mood("bare_bulb", "Bare bulb, swinging", "A bare bulb on a flex above the photo, swaying slowly so the "
-         "shadows move with it.", 0.08, True),
+         "shadows move with it.", 0.55, True, 1.5),
     Mood("torch", "Torch in the dark", "Pitch dark. Someone beside the camera searches with a torch; the beam "
-         "cuts through the haze and finds the photo.", 0.06, True),
-    Mood("candle", "Single candle", "Only a candle just out of shot: warm, low and flickering.", 0.065, True),
+         "cuts through the haze and finds the photo.", 0.6, True, 1.9),
+    Mood("candle", "Single candle", "Only a candle just out of shot: warm, low and flickering.", 0.45, True, 1.5),
     Mood("tv_glow", "TV glow", "A television in a dark room: cold light that jumps and shifts with the "
-         "picture.", 0.06, True),
+         "picture.", 0.4, True, 1.45),
     Mood("neon", "Neon through the window", "Magenta and cyan light from a neon sign outside, buzzing and "
-         "dropping out now and then.", 0.07, True),
+         "dropping out now and then.", 0.45, True, 1.35),
     Mood("police", "Police lights outside", "Red and blue lights flashing through the window in the dark.",
-         0.06, True),
+         0.35, True, 1.45),
     Mood("lightning", "Storm with lightning", "Almost dark, then the room flashes white for an instant, twice.",
-         0.045, True),
+         0.14, True, 1.3),
     Mood("moonlight", "Cold moonlight", "Hard, blue-white moonlight through the window, nothing else.",
-         0.055, True),
-    Mood("red_room", "Darkroom red", "One deep-red safelight. Everything else is gone.", 0.06, True),
+         0.42, True, 1.6),
+    Mood("red_room", "Darkroom red", "One deep-red safelight. Everything else is gone.", 0.4, True, 1.45),
 ]}
 
 WEATHER = {

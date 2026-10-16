@@ -152,31 +152,32 @@ def _hide_from_camera(o):
 
 def _low_key(r: Rig):
     """One hard, high side light. Everything it doesn't touch falls away to black."""
-    key = _light("MoodKey", "SPOT", 70, kelvin_rgb(3400), r.around(62, 48, 1.7), r.S, size=0.015, spot=24,
-                 blend=0.25, col=r.col)
+    key = _light("MoodKey", "SPOT", 70, kelvin_rgb(3400), r.around(62, 48, 1.7), r.S, size=0.015, spot=10,
+                 blend=0.2, col=r.col)
     # the faintest cold kick from behind so edges separate from the dark
-    _light("MoodKick", "AREA", 6, kelvin_rgb(7500), r.around(165, 30, 1.4), r.S, size=0.4, col=r.col)
+    _light("MoodKick", "AREA", 2.5, kelvin_rgb(7500), r.around(165, 30, 1.4), r.S, size=0.3, col=r.col)
     return [key]
 
 
 def _blinds(r: Rig):
     """Hard light through venetian blinds: stripes across the photo and the table."""
-    src = r.around(55, 34, 2.3)
-    spot = _light("MoodBlindsKey", "SPOT", 140, kelvin_rgb(4200), src, r.S, size=0.004, spot=30, blend=0.05,
+    src = r.around(55, 30, 2.6)
+    spot = _light("MoodBlindsKey", "SPOT", 160, kelvin_rgb(4200), src, r.S, size=0.003, spot=30, blend=0.05,
                   col=r.col)
-    # real slats between the light and the photo: they cast the stripes, the camera never sees them
+    # real slats between the light and the photo: they cast the stripes, the camera never sees them. Close-ish to
+    # the photo so the stripes are a few centimetres apart and several cross the print.
     to_s = (r.S - src).normalized()
-    centre = src + to_s * 0.55
+    centre = r.S - to_s * 0.85
     up = Vector((0, 0, 1))
     side = to_s.cross(up).normalized()
     slat_up = side.cross(to_s).normalized()
     bm = bmesh.new()
-    n_slats, pitch, depth, width = 22, 0.028, 0.02, 0.7
+    n_slats, pitch, depth, width = 34, 0.032, 0.022, 1.1
     for k in range(n_slats):
         off = (k - n_slats / 2) * pitch
         c = centre + slat_up * off
         rot = Matrix((side, to_s, slat_up)).transposed()
-        tilt = Matrix.Rotation(math.radians(28), 3, side)
+        tilt = Matrix.Rotation(math.radians(34), 3, side)
         verts = []
         for dx, dy, dz in ((-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1), (-1, -1, 1), (1, -1, 1), (1, 1, 1),
                            (-1, 1, 1)):
@@ -187,7 +188,7 @@ def _blinds(r: Rig):
     slats = mesh_object("MoodBlindSlats", bm, r.col, mat=M.metal("BlindSlat", "#cfcbc2", 0.5, 0.2, 0.0))
     _hide_from_camera(slats)
     # dim cold ambience so the shadow stripes aren't pure black
-    _light("MoodBlindsFill", "AREA", 5, kelvin_rgb(8000), r.around(-70, 40, 2.0), r.S, size=1.2, col=r.col)
+    _light("MoodBlindsFill", "AREA", 2.5, kelvin_rgb(8000), r.around(-70, 40, 2.0), r.S, size=1.2, col=r.col)
     return [spot]
 
 
@@ -243,7 +244,7 @@ def _torch(r: Rig):
     target = bpy.data.objects.new("MoodTorchTarget", None)
     link(target, r.col)
     at = r.S + r.toward_cam * 1.2 + r.right * 0.35 + Vector((0, 0, 0.25))
-    spot = _light("MoodTorch", "SPOT", 38, kelvin_rgb(5200), at, size=0.012, spot=17, blend=0.55, col=r.col)
+    spot = _light("MoodTorch", "SPOT", 38, kelvin_rgb(5200), at, size=0.012, spot=11, blend=0.35, col=r.col)
     if r.camera is not None:
         # held just beside the lens and a little below it, following the camera
         scene = bpy.context.scene
@@ -281,7 +282,7 @@ def _torch(r: Rig):
         e = 38.0 * (0.55 if r.rng.random() < 0.03 else 1.0)
         _key_energy(spot, f, e)
     _constant(spot)
-    _light("MoodTorchSpill", "AREA", 2, kelvin_rgb(6500), r.around(0, 60, 2.0), r.S, size=1.5, col=r.col)
+    _light("MoodTorchSpill", "AREA", 0.5, kelvin_rgb(6500), r.around(0, 60, 2.0), r.S, size=1.5, col=r.col)
     return [spot]
 
 
@@ -406,7 +407,7 @@ def apply(mood: str, rig: Rig, existing_lights: list):
     if mood not in BUILDERS:
         return []
     lamps = settings(mood)["lamps"]
-    scale = {"keep": 1.0, "dim": 0.12, "off": 0.0}[lamps]
+    scale = {"keep": 1.0, "dim": 0.05, "off": 0.0}[lamps]
     if scale < 1.0:
         for ob in existing_lights:
             if ob.type != "LIGHT" or getattr(ob.data.cycles, "is_portal", False):

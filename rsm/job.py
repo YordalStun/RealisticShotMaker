@@ -52,10 +52,14 @@ def film_params(spec: ShotSpec) -> dict:
     key = {"morning": 0.17, "midday": 0.18, "golden": 0.15, "evening": 0.1, "night": 0.065}.get(
         spec.scene.time_of_day, 0.15)
     mood = catalog.MOODS.get(spec.scene.mood)
-    if mood is not None and mood.key > 0:
-        key = mood.key   # dark moods are exposed for the photo; the rest of the room stays dark
+    meter = {}
+    vignette = lk.vignette
+    if mood is not None and mood.dark:
+        meter = dict(meter="highlights", key_hi=mood.key, low_key=mood.low_key)
+        vignette = max(vignette, 0.55)
     return dict(
         key=key,
+        **meter,
         exposure=lk.exposure,
         grade=lk.grade,
         grain=pick(lk.grain, body.grain),
@@ -67,7 +71,7 @@ def film_params(spec: ShotSpec) -> dict:
         flare=lens.flare * character,
         streak=lens.streak * character,
         lens_dirt=lk.lens_dirt,
-        vignette=lk.vignette,
+        vignette=vignette,
         letterbox=lk.letterbox,
     )
 

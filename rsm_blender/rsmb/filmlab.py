@@ -223,6 +223,10 @@ class FilmLab:
         whole = luminance(lin[::4, ::4])
         logavg_c = float(np.exp(np.mean(np.log(np.maximum(centre, 1e-5)))))
         logavg_w = float(np.exp(np.mean(np.log(np.maximum(whole, 1e-5)))))
+        if self.p.get("meter") == "highlights":
+            # low-key moods: expose for the lit part of the photo and let everything else stay dark
+            hi = float(np.percentile(centre, 96))
+            return float(np.clip(float(self.p.get("key_hi", 0.55)) / max(hi, 1e-6), 1 / 64, 256))
         key = logavg_c * 0.7 + logavg_w * 0.3
         target = float(self.p.get("key", 0.16))
         return float(np.clip(target / max(key, 1e-6), 1 / 64, 256))
@@ -246,6 +250,13 @@ class FilmLab:
             self.auto_gain = self.meter(lin)
         gain = self.auto_gain if (p.get("auto_exposure", True) and self.auto_gain) else 1.0
         img = lin.astype(np.float32) * (gain * 2.0 ** p.get("exposure", 0.0))
+        lk = float(p.get("low_key", 1.0))
+        if lk > 1.0:
+            # low-key tone shaping: anything darker than the lit part of the photo sinks towards black,
+            # the highlights stay where the meter put them (a cinematographer's 'let it fall off')
+            k = float(p.get("key_hi", 0.55))
+            lum = np.maximum(luminance(img), 1e-6)
+            img *= np.minimum(1.0, (lum / k) ** (lk - 1.0))[..., None]
 
         # flicker: film camera shutter/lamp variation
         fl = p.get("flicker", 0.0)
