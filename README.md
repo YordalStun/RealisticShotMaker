@@ -57,7 +57,10 @@ Cycles renderer and rendered out to 4K or 8K video.
 
 Your graphics card is used automatically (NVIDIA OptiX first, then CUDA, AMD
 HIP or Intel oneAPI). RTX 50-series cards need Blender 4.4 or newer, which is
-why 4.5 LTS is the minimum.
+why 4.5 LTS is the minimum. The ray-traced lens model runs on NVIDIA OptiX and
+on the CPU; on other graphics cards the app falls back to Blender's standard
+lens (same aperture blades and anamorphic bokeh, without the optical quirks)
+and tells you so.
 
 ## Using it
 

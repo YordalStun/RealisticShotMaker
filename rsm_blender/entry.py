@@ -121,6 +121,13 @@ def build_scene(job: dict):
     scene.cycles.film_exposure = 2 ** (tp.get("exposure", 0.0))
     device = render.enable_gpu(spec["output"].get("device", "auto"))
     log("device", device=device)
+    if device.startswith("GPU:") and ":OPTIX:" not in device + ":":
+        # OSL custom cameras need the CPU or OptiX; elsewhere use Blender's own lens with matching settings
+        cam_data.type = "PERSP"
+        cam_data.dof.aperture_blades = int(lens_def.get("blades", 9)) if lens_def.get("blade_curvature", 1) < 0.95 else 0
+        cam_data.dof.aperture_ratio = float(lens_def.get("squeeze", 1.0))
+        log("warning", message="This graphics card can't run the ray-traced lens model (it needs NVIDIA OptiX or "
+                               "the CPU). Rendering with Blender's standard lens instead.")
     return scene
 
 
