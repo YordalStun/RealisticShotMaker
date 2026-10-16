@@ -132,6 +132,7 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
         n_extra += 5
     if spec.scene.location == "investigation_board":
         n_extra = 7  # the board is covered in other photos
+    n_extra = {"photo_line": 11, "photo_spread": 12, "photo_album": 10}.get(spec.scene.location, n_extra)
     for i in range(n_extra):
         progress(f"Making other photos ({i + 1}/{n_extra})…")
         v = _variant(spec.polaroid, r)

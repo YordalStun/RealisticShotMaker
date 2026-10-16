@@ -134,6 +134,8 @@ class Location(Option):
     placements: tuple[str, ...] = ("leaning", "flat", "pile")
     default_time: str = "golden"
     options: tuple = ()
+    default_move: str = ""         # multi-photo sets suggest a move that travels between the photos
+    multi: bool = False            # built around several photos
 
 
 LOCATIONS: dict[str, Location] = {l.id: l for l in [
@@ -198,6 +200,42 @@ LOCATIONS: dict[str, Location] = {l.id: l for l in [
                  LocOpt("blinds", "Light through the blinds", "check", True),
                  LocOpt("marker_notes", "Marker writing on the glass", "check", True),
              )),
+    Location("photo_line", "Photo line on a brick wall",
+             "Photos pegged along twine lines across a painted brick wall, fairy lights woven through them. "
+             "Made for several photos: tour along the line or cut between prints.", ("hanging",),
+             default_time="evening", default_move="photo_tour", multi=True, options=(
+                 LocOpt("fairy_lights", "Fairy lights", "combo", "on", AUTO_ON_OFF),
+                 LocOpt("lines", "Lines of photos", "combo", "2", (("1", "One line"), ("2", "Two lines"))),
+                 LocOpt("wall", "Wall", "combo", "brick", (("brick", "Painted brick"), ("plaster", "Plaster"))),
+                 LocOpt("lamp", "Desk lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("darkroom", "Darkroom (red safelight)", "check", False,
+                        tip="Turns the room into a darkroom: no window, developing trays, a red safelight."),
+             )),
+    Location("photo_spread", "Shoebox of photos on a coffee table",
+             "An old shoebox tipped out across a living-room coffee table: overlapping prints, a magnifying "
+             "glass, a cup of tea. Sofa, lamp and window behind. Made for several photos.",
+             ("flat", "leaning", "pile"), default_time="golden", default_move="photo_tour", multi=True, options=(
+                 LocOpt("spread", "How many photos", "combo", "lots",
+                        (("some", "A handful"), ("lots", "The whole box"))),
+                 LocOpt("shoebox", "The shoebox", "check", True),
+                 LocOpt("magnifier", "Magnifying glass", "check", True),
+                 LocOpt("tea", "Cup of tea", "check", True),
+                 LocOpt("floor_lamp", "Floor lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("curtains", "Curtains", "combo", "open", (("open", "Open"), ("half", "Half drawn"))),
+             )),
+    Location("photo_album", "Open photo album",
+             "A family album open on the dining table, prints held by photo corners with handwritten "
+             "captions. A few loose prints beside it. Made for several photos.", ("mounted", "flat"),
+             default_time="morning", default_move="photo_montage", multi=True, options=(
+                 LocOpt("pages", "Album pages", "combo", "black", (("black", "Black card (white pencil)"),
+                                                                  ("cream", "Cream card (ink)"))),
+                 LocOpt("cover", "Cover", "combo", "green", (("green", "Green leather"), ("red", "Red leather"),
+                                                            ("brown", "Brown leather"))),
+                 LocOpt("captions", "Handwritten captions", "check", True),
+                 LocOpt("tea", "Cup of tea", "check", True),
+                 LocOpt("lamp", "Table lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("net_curtains", "Net curtains", "check", True),
+             )),
 ]}
 
 
@@ -216,6 +254,8 @@ PLACEMENTS = {
     "leaning": "Leaning upright",
     "flat": "Lying flat",
     "pile": "On top of a pile of photos",
+    "hanging": "Hanging on a line",
+    "mounted": "Mounted in the album",
 }
 
 TIMES_OF_DAY = {

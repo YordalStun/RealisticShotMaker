@@ -410,9 +410,22 @@ class MainWindow(QMainWindow):
                     w.set_color(str(v))
                 elif f.kind == "folder":
                     w.set_value(str(v))
+        self._limit_placements()
         self._loading = False
         self._rebuild_location_options()
         self._update_estimate()
+
+    def _limit_placements(self):
+        """Only offer the placements the chosen set can do (no 'pinned' on the kitchen table)."""
+        w = self.widgets.get("scene.placement")
+        loc = catalog.LOCATIONS.get(self.spec.scene.location)
+        if w is None or loc is None:
+            return
+        model = w.model()
+        for i in range(w.count()):
+            item = model.item(i)
+            if item is not None:
+                item.setEnabled(w.itemData(i) in loc.placements)
 
     def _rebuild_location_options(self):
         """Options that only exist for the chosen location (string on the board, breakfast mess, …)."""
@@ -467,6 +480,11 @@ class MainWindow(QMainWindow):
                 self.spec.scene.time_of_day = loc.default_time
                 if self.spec.scene.placement not in loc.placements:
                     self.spec.scene.placement = loc.placements[0]
+                cur = catalog.MOVES.get(self.spec.camera.move)
+                if loc.default_move and (cur is None or cur.group != "multi"):
+                    # sets made for several photos start on a move that travels between them
+                    self.spec.camera.move = loc.default_move
+                    self.spec.camera.duration = catalog.MOVES[loc.default_move].default_duration
             self._load_into_widgets()
         if f.path == "camera.framing":
             # like a DP changing lenses: wider framings get wider lenses (the user can still override)

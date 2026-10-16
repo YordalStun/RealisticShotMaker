@@ -175,12 +175,39 @@ def _tape(col, centre: Vector, angle: float, length=0.045, name="Tape"):
     return t
 
 
-def _paper_item(col, kind, at: Vector, size, roll, rng, name):
+def _ruled_card(name, base_hex, rule_hex="#8fb3d9", top_rule="#d06a6a", rules=True):
+    """Index card / sticky note paper: clean stock with printed rules (no fake ink)."""
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+    sep = n.new("ShaderNodeSeparateXYZ")
+    n.link(tc, "Generated", sep, "Vector")
+    col = srgb(base_hex)
+    fib = n.new("ShaderNodeTexNoise", Scale=900.0, Detail=3.0)
+    n.link(tc, "Object", fib, "Vector")
+    c = n.mix("RGBA", 0.04, col, (fib, "Color"), blend="OVERLAY")
+    if rules:
+        wav = n.new("ShaderNodeTexWave", _wave_type="BANDS", _bands_direction="Z", Scale=7.0, Distortion=0.0)
+        n.link(tc, "Generated", wav, "Vector")
+        line = n.ramp((wav, "Fac"), [(0.0, (0, 0, 0)), (0.93, (0, 0, 0)), (0.97, (1, 1, 1)), (1.0, (0, 0, 0))])
+        c = n.mix("RGBA", n.math("MULTIPLY", (line, "Color"), 0.7), c, srgb(rule_hex))
+        top = n.ramp((sep, "Z"), [(0.0, (0, 0, 0)), (0.78, (0, 0, 0)), (0.79, (1, 1, 1)), (0.8, (0, 0, 0))])
+        c = n.mix("RGBA", (top, "Color"), c, srgb(top_rule))
+    b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.7)
+    n.link(c, None, b, "Base Color")
+    b.inputs["Subsurface Weight"].default_value = 0.05
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    return mat
+
+
+def _paper_item(col, kind, at: Vector, size, roll, rng, name, font=None, ink=None):
     """Index cards, sticky notes, clippings and a map, stuck flat to the board."""
     w, h = size
     if kind == "sticky":
-        mat = M.paper(f"{name}_mat", rng.choice(["#f2e46a", "#f5b0c4", "#9fd8e8"]), 0.6, 0.1, ink_lines=True,
-                      line_color="#1d2a6a")
+        mat = _ruled_card(f"{name}_mat", rng.choice(["#f2e46a", "#f5b0c4", "#9fd8e8"]), rules=False)
+    elif kind == "index":
+        mat = _ruled_card(f"{name}_mat", "#f6f3ea")
     elif kind == "clipping":
         mat = M.paper(f"{name}_mat", "#e3dcc8", 0.8, 0.7, ink_lines=True, line_color="#2a2a2a")
     elif kind == "map":
@@ -189,6 +216,14 @@ def _paper_item(col, kind, at: Vector, size, roll, rng, name):
         mat = M.paper(f"{name}_mat", "#f1ede2", 0.65, 0.2, ink_lines=True, line_color="#1f2a5a")
     o = box(name, w, 0.0004, h, (at.x, at.y - 0.0005, at.z), mat, col)
     o.rotation_euler = (0, roll, 0)
+    if kind in ("index", "sticky") and ink is not None:
+        # a couple of handwritten lines on the card
+        lines = rng.sample(NOTES, 2) if kind == "index" else [rng.choice(NOTES)]
+        for k, txt in enumerate(lines):
+            t = _text(col, txt, font, h * (0.17 if kind == "index" else 0.2),
+                      (at.x + math.sin(roll) * (h * (0.12 - 0.3 * k)), at.y - 0.0012,
+                       at.z + math.cos(roll) * (h * (0.12 - 0.3 * k)) - h * 0.04),
+                      (math.radians(90), roll, 0), ink, name=f"{name}_text{k}")
     return o
 
 
@@ -234,7 +269,8 @@ def _desk(col, at: Vector, rot, rng, monitors_on: bool, lamp_on: bool, idx: int)
         stand = box(f"MonStand{idx}{k}", 0.05, 0.05, 0.16, (mx, 0.15, 0.83), M.plastic("Bezel", "#16171a", 0.3, 0.4), col)
         base = box(f"MonBase{idx}{k}", 0.22, 0.16, 0.012, (mx, 0.12, 0.76), M.plastic("Bezel", "#16171a", 0.3, 0.4), col,
                    bevel=0.004)
-        scr_mat = _screen(f"Screen{idx}{k}", rng.choice(["#3a6ea8", "#2f7a6a", "#5a5aa8"]), 3.5 if monitors_on else 0.0,
+        # screens are dim in a dark office: bright enough to glow, not so bright they burn out
+        scr_mat = _screen(f"Screen{idx}{k}", rng.choice(["#3a6ea8", "#2f7a6a", "#5a5aa8"]), 0.55 if monitors_on else 0.0,
                           seed=rng.uniform(0, 10))
         scr = box(f"Screen{idx}{k}", 0.53, 0.002, 0.31, (mx, 0.104, 1.02), scr_mat, col)
         for o in (bezel, stand, base, scr):
@@ -474,6 +510,7 @@ def build(ctx: Ctx):
             _magnet(col, pin, "#c8342c", name=f"Pin{i}")
     if board_kind == "glass":
         _magnet(col, pins["hero"], "#c8342c", name="HeroMagnet")
+    card_ink = _marker_ink("BallpointBlue", "#1f2f7a")
     papers = [("index", (-0.88, -0.05), (0.127, 0.076)), ("sticky", (0.05, 0.42), (0.076, 0.076)),
               ("sticky", (0.88, -0.36), (0.076, 0.076)), ("clipping", (0.45, -0.05), (0.14, 0.2)),
               ("map", (-0.3, -0.36), (0.3, 0.2)), ("index", (0.15, 0.12), (0.127, 0.076)),
@@ -482,7 +519,7 @@ def build(ctx: Ctx):
         if clutter < 0.3 and i > 2:
             break
         c = Vector((px, face_y - 0.0006, BOARD_Z + pz))
-        _paper_item(col, kind, c, size, math.radians(rng.uniform(-6, 6)), rng, f"Paper{i}")
+        _paper_item(col, kind, c, size, math.radians(rng.uniform(-6, 6)), rng, f"Paper{i}", font, card_ink)
         if kind in ("index", "clipping", "map"):
             pins[f"n{i}"] = c + Vector((0, -0.006, size[1] / 2 - 0.01))
             _magnet(col, pins[f"n{i}"], "#d8d4cc", name=f"PaperMagnet{i}")

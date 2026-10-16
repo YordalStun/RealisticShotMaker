@@ -303,7 +303,7 @@ def footprint_heights(meta, where: Vector, yaw: float) -> list[float]:
 
 
 def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: float = 18.0, lift=0.0005,
-               settle: bool = True):
+               settle: bool = True, register: bool = True):
     """Place a print. mode: leaning | flat. yaw rotates around Z (0 = facing -Y).
     Flat prints settle onto whatever is under them (table, runner, letters, other prints).
     Returns (obj, picture_centre_world, normal_world)."""
@@ -338,7 +338,8 @@ def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: 
     bpy.context.view_layer.update()
     centre = obj.matrix_world @ image_centre_local(meta)
     normal = (obj.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
-    register_print(obj, meta, centre, normal, hero=name == "HeroPrint")
+    if register:  # hidden prints (in a box, under others) are left out so multi-photo moves don't visit them
+        register_print(obj, meta, centre, normal, hero=name == "HeroPrint")
     return obj, centre, normal
 
 
@@ -638,3 +639,83 @@ def fairy_lights(col, points: list, count: int, rng, kelvin=2400.0, strength=30.
             v.co.z *= 1.5
             v.co += p - Vector((0, 0, 0.004))
     return mesh_object(f"{name}Bulbs", bm, col, mat=bulb_mat)
+
+
+def hang_card(meta, name, col, top: Vector, yaw: float = 0.0, roll: float = 0.0, sway: float = 0.0):
+    """Hang a print by the middle of its top edge (pegged on a line, pinned to a wall). It faces -Y
+    rotated by yaw; roll turns it in its own plane, sway tips the bottom towards/away from the wall."""
+    obj = build_card(meta, name, col)
+    w, h = card_size(meta)
+    rot = Matrix.Rotation(yaw, 3, "Z") @ Matrix.Rotation(roll, 3, "Y") @ Matrix.Rotation(sway, 3, "X")
+    obj.matrix_world = Matrix.Translation(top - rot @ Vector((0, 0, h))) @ rot.to_4x4()
+    bpy.context.view_layer.update()
+    centre = obj.matrix_world @ image_centre_local(meta)
+    normal = (obj.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
+    register_print(obj, meta, centre, normal, hero=name == "HeroPrint")
+    return obj, centre, normal
+
+
+def clothes_peg(name, col, at: Vector, yaw: float = 0.0, roll: float = 0.0):
+    """A wooden clothes peg clipped over a line: two prongs and a steel spring."""
+    from ..util import cylinder
+    root = bpy.data.objects.new(name, None)
+    link(root, col)
+    root.location = at
+    root.rotation_euler = (0, roll, yaw)
+    wood = M.wood("PegWood", "pine", varnish=0.0, wear=0.3, scale=6.0, grain_axis="Z")
+    steel = M.metal("PegSpring", "#b9bcbf", 0.3, 0.3, 0.2)
+    for k, dy in enumerate((-0.0035, 0.0035)):
+        prong = box(f"{name}_prong{k}", 0.0095, 0.0045, 0.072, (0, dy, -0.012), wood, col, bevel=0.0012)
+        prong.parent = root
+    spring = cylinder(f"{name}_spring", 0.0045, 0.009, (-0.0045, 0, 0.0), steel, col, 16)
+    spring.rotation_euler = (0, math.radians(90), 0)
+    spring.parent = root
+    return root
+
+
+def sagging_line(name, col, a: Vector, b: Vector, sag: float, radius: float = 0.0012, mat=None, steps: int = 40):
+    """A twine/wire line hanging between two points. Returns a function giving the point at 0..1."""
+    def at(t):
+        return a.lerp(b, t) - Vector((0, 0, sag * 4 * t * (1 - t)))
+    cu = bpy.data.curves.new(name, "CURVE")
+    cu.dimensions = "3D"
+    sp = cu.splines.new("POLY")
+    sp.points.add(steps)
+    for k in range(steps + 1):
+        p = at(k / steps)
+        sp.points[k].co = (p.x, p.y, p.z, 1)
+    cu.bevel_depth = radius
+    cu.bevel_resolution = 3
+    o = bpy.data.objects.new(name, cu)
+    link(o, col)
+    o.data.materials.append(mat or M.fabric("Twine", "#9a7b55", threads_per_m=2500, rough=0.9, sheen=0.4))
+    return at
+
+
+def hand_font(ctx: "Ctx", prefer=("Caveat.ttf", "ShadowsIntoLight.ttf")):
+    """One of the bundled handwriting fonts as a Blender font (None if they're missing)."""
+    import os
+    fdir = ctx.job["paths"].get("fonts") or os.path.join(os.path.dirname(__file__), "..", "..", "..", "rsm", "assets",
+                                                          "fonts")
+    for fname in prefer:
+        fp = os.path.join(fdir, fname)
+        if os.path.exists(fp):
+            return bpy.data.fonts.load(fp, check_existing=True)
+    return None
+
+
+def text_obj(col, body, font, size, loc, rot, mat, name="Writing", align="CENTER"):
+    """Handwriting as very thin extruded text (ink sits on the paper, catches a little light)."""
+    cu = bpy.data.curves.new(name, "FONT")
+    cu.body = body
+    if font:
+        cu.font = font
+    cu.size = size
+    cu.align_x = align
+    cu.extrude = 0.00005
+    o = bpy.data.objects.new(name, cu)
+    link(o, col)
+    o.location = loc
+    o.rotation_euler = rot
+    o.data.materials.append(mat)
+    return o
