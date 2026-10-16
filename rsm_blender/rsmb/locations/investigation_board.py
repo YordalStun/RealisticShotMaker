@@ -79,14 +79,18 @@ def _fingerprint_mat(name="Fingerprint"):
     # a whorl: concentric ridges, a little off-centre and wobbly, fading out towards the edge of the print
     whorl = n.vmath("ADD", mp, (0.18, -0.12, 0.0))
     ridges = n.new("ShaderNodeTexWave", _wave_type="RINGS", _rings_direction="SPHERICAL", _wave_profile="SIN",
-                   Scale=1.6, Distortion=2.2, Detail=1.5)
+                   Scale=6.5, Distortion=3.5, Detail=2.0)
     n.link(whorl, None, ridges, "Vector")
     grad = n.new("ShaderNodeTexGradient", _gradient_type="SPHERICAL")
     n.link(mp, None, grad, "Vector")
     ridge = n.ramp((ridges, "Fac"), [(0.45, (0, 0, 0)), (0.7, (1, 1, 1))])
     edge = n.ramp((grad, "Fac"), [(0.0, (0, 0, 0)), (0.45, (1, 1, 1))])
-    r = n.math("MULTIPLY", (ridge, "Color"), (edge, "Color"))
-    n.link(n.math("MULTIPLY", r, 0.16), None, b, "Alpha")
+    # skin oil smears: the ridges are only partly there
+    smear = n.new("ShaderNodeTexNoise", Scale=2.5, Detail=3.0)
+    n.link(mp, None, smear, "Vector")
+    smear_m = n.ramp((smear, "Fac"), [(0.35, (0.15, 0.15, 0.15)), (0.65, (1, 1, 1))])
+    r = n.math("MULTIPLY", n.math("MULTIPLY", (ridge, "Color"), (edge, "Color")), (smear_m, "Color"))
+    n.link(n.math("MULTIPLY", r, 0.09), None, b, "Alpha")
     out = n.new("ShaderNodeOutputMaterial")
     n.link(b, None, out, "Surface")
     return mat
