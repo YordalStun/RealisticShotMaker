@@ -201,6 +201,8 @@ def _pin_print(meta, name, col, centre: Vector, roll: float, face_y: float):
     # rotating about Y maps the card's (0, 0, h/2) to (h/2·sin, 0, h/2·cos)
     obj.location = (centre.x - math.sin(roll) * h_mm / 2000.0, face_y, centre.z - math.cos(roll) * h_mm / 2000.0)
     bpy.context.view_layer.update()
+    from .common import register_print
+    register_print(obj, meta, obj.matrix_world @ image_centre_local(meta), Vector((0, -1, 0)), hero=name == "HeroPrint")
     return obj
 
 

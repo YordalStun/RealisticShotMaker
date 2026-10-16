@@ -48,6 +48,8 @@ def build_scene(job: dict):
     spec = job["spec"]
     res = job["resolved"]
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    from rsmb import materials as _materials
+    _materials._cache.clear()  # materials from a previous build in this process no longer exist
     scene = bpy.context.scene
     scene.unit_settings.system = "METRIC"
     col = collection("RSM_Set")
@@ -61,10 +63,13 @@ def build_scene(job: dict):
     except ModuleNotFoundError:
         log("warning", message=f"Location {loc_id} not found, using study_desk")
         mod = importlib.import_module("rsmb.locations.study_desk")
+    from rsmb.locations import common as loc_common
+    loc_common.PLACED_PRINTS.clear()
     built = mod.build(ctx)
     anchors: camera_rig.Anchors = built["anchors"]
     room = built["room"]
-    anchors.extra = dict(anchors.extra or {}, room=(tuple(room.min), tuple(room.max)))
+    anchors.extra = dict(anchors.extra or {}, room=(tuple(room.min), tuple(room.max)),
+                         photos=list(loc_common.PLACED_PRINTS))
 
     # ---- sky and sun
     tp = world.TIME_PRESETS.get(tod, world.TIME_PRESETS["golden"])
@@ -109,7 +114,9 @@ def build_scene(job: dict):
     cam_data.clip_end = 200.0
     character = float(spec["look"].get("lens_character", 1.0))
     ca_scale = float(spec["look"].get("chromatic_aberration", 1.0))
-    src = lens.build_osl(lens_def, float(cam_spec["focal_mm"]), character, ca_scale)
+    from rsmb.shots import ZOOM_MOVES
+    zoomable = cam_spec["move"] in ZOOM_MOVES or (cam_spec["move"] == "macro_cut" and cam_spec.get("cut_to") in ZOOM_MOVES)
+    src = lens.build_osl(lens_def, float(cam_spec["focal_mm"]), character, ca_scale, zoomable=zoomable)
     lens.apply_lens(cam_data, src, job["paths"]["work"])
     aspect = res["width"] / res["height"]
     camera_rig.animate_camera(cam, cam_spec, anchors, float(res["fps"]), int(res["frame_start"]),
@@ -126,6 +133,17 @@ def build_scene(job: dict):
         cam_data.type = "PERSP"
         cam_data.dof.aperture_blades = int(lens_def.get("blades", 9)) if lens_def.get("blade_curvature", 1) < 0.95 else 0
         cam_data.dof.aperture_ratio = float(lens_def.get("squeeze", 1.0))
+        if zoomable and cam_data.animation_data and cam_data.animation_data.action:
+            # the zoom track lived on aperture_ratio for the custom lens; move it to the focal length
+            from rsmb.camera_rig import _fcurves
+            focal = float(cam_spec["focal_mm"])
+            for fc in list(_fcurves(cam_data.animation_data.action)):
+                if fc.data_path == "dof.aperture_ratio":
+                    for kp in fc.keyframe_points:
+                        cam_data.lens = focal * kp.co.y
+                        cam_data.keyframe_insert("lens", frame=kp.co.x)
+                    fc.keyframe_points.clear()
+            cam_data.dof.aperture_ratio = float(lens_def.get("squeeze", 1.0))
         log("warning", message="This graphics card can't run the ray-traced lens model (it needs NVIDIA OptiX or "
                                "the CPU). Rendering with Blender's standard lens instead.")
     return scene

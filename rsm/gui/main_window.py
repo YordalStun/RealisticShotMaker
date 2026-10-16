@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QAction, QImage, QKeySequence
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QListWidget, QListWidgetItem, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
                                QProgressBar, QPushButton, QScrollArea, QSlider, QSpinBox, QSplitter,
                                QTableWidget, QTableWidgetItem, QTabWidget, QToolBar, QVBoxLayout, QWidget)
@@ -142,6 +142,8 @@ class MainWindow(QMainWindow):
         self.tabs.setMinimumWidth(470)
         for section, fields in SECTIONS.items():
             self.tabs.addTab(self._build_section(section, fields), section)
+            if section == "Camera":
+                self.tabs.addTab(self._build_fun_tab(), "Fun moves")
 
         # monitor + polaroid
         self.monitor = ImageView("Press “Preview frame” to see a quick render of your shot.\n\n"
@@ -254,6 +256,54 @@ class MainWindow(QMainWindow):
         scroll.setWidget(page)
         return scroll
 
+    def _build_fun_tab(self) -> QWidget:
+        """Playful camera tricks: whip-pan cuts, crash zooms, the Vertigo effect, ..."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        intro = QLabel("Stylish camera tricks. Click one to use it; hover to see a preview. "
+                       "Lens, aperture and camera body still come from the Camera tab.")
+        intro.setWordWrap(True)
+        intro.setObjectName("Caption")
+        lay.addWidget(intro)
+        self.fun_list = QListWidget()
+        self.fun_list.setMouseTracking(True)
+        self.fun_list.setWordWrap(True)
+        self.fun_list.setSpacing(4)
+        for k, mv in catalog.MOVES.items():
+            if mv.group != "fun":
+                continue
+            item = QListWidgetItem(f"{mv.name}\n{mv.description}")
+            item.setData(Qt.UserRole, k)
+            self.fun_list.addItem(item)
+        self.fun_list.itemClicked.connect(self._fun_chosen)
+        self.fun_list.itemEntered.connect(
+            lambda it: self.preview_popup.show_move(it.data(Qt.UserRole),
+                                                    self.fun_list.mapToGlobal(self.fun_list.rect().topRight())))
+        self.fun_list.viewport().installEventFilter(self)
+        lay.addWidget(self.fun_list, 1)
+        back = QPushButton("Back to the classic moves")
+        back.clicked.connect(self._fun_cleared)
+        lay.addWidget(back)
+        return page
+
+    def eventFilter(self, obj, ev):
+        from PySide6.QtCore import QEvent
+        if getattr(self, "fun_list", None) is not None and obj is self.fun_list.viewport() and ev.type() == QEvent.Leave:
+            self.preview_popup.hide_preview()
+        return super().eventFilter(obj, ev)
+
+    def _fun_chosen(self, item):
+        move = item.data(Qt.UserRole)
+        self.spec.camera.move = move
+        mv = catalog.MOVES[move]
+        self.spec.camera.duration = mv.default_duration
+        self._load_into_widgets()
+
+    def _fun_cleared(self):
+        self.spec.camera.move = "push_in"
+        self.spec.camera.duration = catalog.MOVES["push_in"].default_duration
+        self._load_into_widgets()
+
     def _make_widget(self, f: Field) -> QWidget:
         if f.kind == "combo":
             w = QComboBox()
@@ -307,6 +357,29 @@ class MainWindow(QMainWindow):
             for f in fields:
                 w = self.widgets[f.path]
                 v = get_attr(self.spec, f.path)
+                if f.path == "camera.move":
+                    fun = catalog.MOVES.get(v) is not None and catalog.MOVES[v].group == "fun"
+                    ph = w.findData("__fun__")
+                    if fun:
+                        label = f"Fun move: {catalog.MOVES[v].name}"
+                        if ph < 0:
+                            w.addItem(label, "__fun__")
+                            ph = w.count() - 1
+                        w.setItemText(ph, label)
+                        w.blockSignals(True)
+                        w.setCurrentIndex(ph)
+                        w.blockSignals(False)
+                        if hasattr(self, "fun_list"):
+                            for r in range(self.fun_list.count()):
+                                if self.fun_list.item(r).data(Qt.UserRole) == v:
+                                    self.fun_list.setCurrentRow(r)
+                        continue
+                    if ph >= 0:
+                        w.blockSignals(True)
+                        w.removeItem(ph)
+                        w.blockSignals(False)
+                    if hasattr(self, "fun_list"):
+                        self.fun_list.clearSelection()
                 if f.kind == "combo":
                     idx = w.findData(str(v) if not isinstance(v, str) else v)
                     if idx < 0 and isinstance(v, float):
@@ -378,7 +451,7 @@ class MainWindow(QMainWindow):
         self._update_estimate()
 
     def _changed(self, f: Field, value):
-        if getattr(self, "_loading", False):
+        if getattr(self, "_loading", False) or value == "__fun__":
             return
         set_attr(self.spec, f.path, value)
         if f.path == "polaroid.condition":

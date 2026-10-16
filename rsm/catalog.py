@@ -240,6 +240,7 @@ WEATHER = {
 @dataclass(frozen=True)
 class Move(Option):
     default_duration: float = 8.0
+    group: str = "classic"      # classic | fun | multi
 
 
 MOVES: dict[str, Move] = {m.id: m for m in [
@@ -264,6 +265,27 @@ MOVES: dict[str, Move] = {m.id: m for m in [
     Move("pan_across", "Pan across", "Pans from a nearby object onto the photo."),
     Move("handheld", "Handheld", "Basically still, with the natural sway of a person holding the camera."),
     Move("locked_off", "Locked-off", "No movement at all. Dust and light provide the life."),
+    # several photos
+    Move("photo_tour", "Photo tour", "Glides from photo to photo, pausing on each and racking focus as it "
+         "travels, and ends on your photo. Best in the multi-photo locations.", 12.0, "multi"),
+    Move("photo_montage", "Photo montage", "Hard cuts between several photos, each with its own slow drift, "
+         "ending on your photo. A whole sequence in one shot.", 12.0, "multi"),
+    # fun
+    Move("whip_cut", "Whip-pan cut", "Lingers on another photo, whips away into a blur and lands on yours. The "
+         "cut is hidden inside the motion blur.", 7.0, "fun"),
+    Move("whip_pan", "Whip pan", "A beat on something nearby, then a fast swish that lands (and settles) on "
+         "the photo.", 6.0, "fun"),
+    Move("crash_zoom", "Crash zoom", "A sudden, punchy zoom straight into the photo, with a little bounce as "
+         "the zoom ring hits its stop.", 5.0, "fun"),
+    Move("dolly_zoom", "Dolly zoom (Vertigo)", "The camera backs away while zooming in: the photo stays the "
+         "same size while the room stretches behind it.", 8.0, "fun"),
+    Move("wipe_reveal", "Wipe reveal", "Slides past something right in front of the lens: a soft dark wipe, "
+         "then the photo.", 7.0, "fun"),
+    Move("speed_ramp", "Speed ramp", "Rushes in fast, then slows to a crawl on the photo.", 6.0, "fun"),
+    Move("roll_reveal", "Roll reveal", "Starts tipped on its side and rolls level as it settles on the photo.",
+         7.0, "fun"),
+    Move("orbit", "Orbit", "Circles the photo: all the way round when it lies flat, a wide arc when it "
+         "stands.", 12.0, "fun"),
 ]}
 
 FRAMINGS = {

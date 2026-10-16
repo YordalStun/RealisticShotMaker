@@ -221,6 +221,15 @@ def outdoor_backdrop(col, centre: Vector, facing: Vector, rng: random.Random, di
 # Instant prints
 # ---------------------------------------------------------------------------
 
+# every instant print placed in the set, so camera moves can travel between photos
+PLACED_PRINTS: list[dict] = []
+
+
+def register_print(obj, meta, centre: Vector, normal: Vector, hero: bool = False):
+    PLACED_PRINTS.append(dict(name=obj.name, centre=centre.copy(), normal=normal.copy(),
+                              height=float(meta["card_mm"][1]) / 1000.0, hero=hero))
+
+
 _NOT_A_SURFACE = ("Haze", "DustMotes", "Steam", "Portal", "Fairy", "Cobweb", "String")
 
 
@@ -329,6 +338,7 @@ def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: 
     bpy.context.view_layer.update()
     centre = obj.matrix_world @ image_centre_local(meta)
     normal = (obj.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
+    register_print(obj, meta, centre, normal, hero=name == "HeroPrint")
     return obj, centre, normal
 
 

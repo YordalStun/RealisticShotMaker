@@ -41,6 +41,7 @@ OSL_TEMPLATE = Template(r"""
 #define VIGNETTE      $vignette
 #define SQUEEZE       $squeeze
 #define SPECTRAL      $spectral
+#define ZOOMABLE      $zoomable
 
 shader rsm_lens(output point position = 0.0,
                 output vector direction = 0.0,
@@ -92,6 +93,13 @@ shader rsm_lens(output point position = 0.0,
   float f_m = FOCAL_MM * 0.001;
   float m = f_m / max(fd - f_m, 0.001);
   float f_eff = FOCAL_MM * (1.0 + BREATHING * 2.5 * m);
+  if (ZOOMABLE) {
+    // zoom moves (crash zoom, dolly zoom) animate the camera's aperture ratio as a zoom factor;
+    // this lens draws its own aperture, so that property is otherwise unused
+    float zf = 1.0;
+    getattribute("cam:aperture_aspect_ratio", zf);
+    f_eff *= max(zf, 0.05);
+  }
 
   vector d = normalize(vector(ux * half_diag / f_eff, uy * half_diag / f_eff, 1.0));
 
@@ -172,7 +180,7 @@ shader rsm_lens(output point position = 0.0,
 """)
 
 
-def build_osl(lens: dict, focal_mm: float, character: float = 1.0, ca_scale: float = 1.0) -> str:
+def build_osl(lens: dict, focal_mm: float, character: float = 1.0, ca_scale: float = 1.0, zoomable: bool = False) -> str:
     """Return OSL source for a lens. `lens` is a catalog.Lens as dict; `character` scales all quirks."""
     c = max(0.0, character)
 
@@ -200,6 +208,7 @@ def build_osl(lens: dict, focal_mm: float, character: float = 1.0, ca_scale: flo
         vignette=f"{min(1.0, q('vignette') * c):.4f}",
         squeeze=f"{max(1.0, q('squeeze', 1.0)):.4f}",
         spectral=1 if (ca_long > 0.001 or ca_lat > 0.001) else 0,
+        zoomable=1 if zoomable else 0,
     )
     return OSL_TEMPLATE.substitute(params)
 
