@@ -797,3 +797,346 @@ def letter_bundle(name, col, loc, rot_z=0.0, count=12, rng=None, string_color="#
     knot = cylinder(f"{name}_knot", 0.004, 0.003, (0.0, 0.0, z + t), twine, col, 16, bevel=0.001)
     _parent(knot, root)
     return root, z + t
+
+
+# ---------------------------------------------------------------------------
+# Small things that make a place feel lived in
+# ---------------------------------------------------------------------------
+
+def _wire(name, col, pts, radius, mat):
+    cu = bpy.data.curves.new(name, "CURVE")
+    cu.dimensions = "3D"
+    sp = cu.splines.new("POLY")
+    sp.points.add(len(pts) - 1)
+    for k, p in enumerate(pts):
+        sp.points[k].co = (p[0], p[1], p[2], 1)
+    cu.bevel_depth = radius
+    cu.bevel_resolution = 2
+    o = bpy.data.objects.new(name, cu)
+    link(o, col)
+    o.data.materials.append(mat)
+    return o
+
+
+def paperclip(name, col, loc, rot_z=0.0, rusty=False):
+    """A Gem paperclip lying flat: three nested loops of steel wire."""
+    root = _group(name, col, loc, rot_z)
+    steel = M.metal("ClipSteel", "#9a8a72" if rusty else "#c9ccd0", rough=0.25 if not rusty else 0.6, smudge=0.3,
+                    tarnish=0.8 if rusty else 0.1)
+    r = 0.0005
+    L, W = 0.033, 0.0085
+
+    def arc(cx, cy, rad, a0, a1, n=10):
+        return [(cx + rad * math.cos(a0 + (a1 - a0) * i / n), cy + rad * math.sin(a0 + (a1 - a0) * i / n), r)
+                for i in range(n + 1)]
+    pts = [(L * 0.62, -W * 0.18, r), (-L / 2 + W / 2, -W / 2, r)] + arc(-L / 2 + W / 2, 0, W / 2, -math.pi / 2,
+                                                                       -3 * math.pi / 2)[1:]
+    pts += [(L / 2 - W * 0.4, W / 2, r)] + arc(L / 2 - W * 0.4, W * 0.08, W * 0.42, math.pi / 2, -math.pi / 2)[1:]
+    pts += [(-L / 2 + W * 0.85, -W * 0.34, r)] + arc(-L / 2 + W * 0.85, W * 0.0, W * 0.34, -math.pi / 2,
+                                                     -3 * math.pi / 2)[1:]
+    pts += [(L * 0.3, W * 0.34, r)]
+    w = _wire(f"{name}_wire", col, pts, r, steel)
+    w.parent = root
+    return root
+
+
+def notebook(name, col, loc, rot_z=0.0, color="#2c3e50", size=(0.148, 0.21, 0.012), band=True):
+    """A hardback notebook with rounded corners, page block and an elastic band."""
+    root = _group(name, col, loc, rot_z)
+    w, d, t = size
+    cover = M.leather(f"{name}_cover", color, rough=0.6, wear=0.4)
+    pages = M.paper(f"{name}_pages", "#efe8d6", rough=0.8, age=0.3)
+    c = box(f"{name}_cover", w, d, t, (0, 0, t / 2), cover, col, bevel=0.0015, segments=3)
+    _parent(c, root)
+    p = box(f"{name}_pageblock", w - 0.004, d - 0.006, t - 0.0035, (0.002, 0, t / 2), pages, col, bevel=0.0006)
+    _parent(p, root)
+    if band:
+        b = box(f"{name}_band", 0.006, d + 0.0012, t + 0.0012, (w / 2 - 0.018, 0, t / 2),
+                M.fabric(f"{name}_elastic", "#1b1b1b", threads_per_m=4000, rough=0.7, sheen=0.3), col, bevel=0.0005)
+        _parent(b, root)
+    rib = box(f"{name}_ribbon", 0.004, 0.06, 0.0004, (0.02, -d / 2 - 0.025, 0.0002),
+              M.fabric(f"{name}_ribbon", "#8c2f2f", threads_per_m=5000, rough=0.4, sheen=0.9), col)
+    _parent(rib, root)
+    return root
+
+
+STAMP_COLOURS = ["#b8333a", "#2f5a8a", "#3f7a4a", "#c99a2e", "#6a3c7a"]
+
+
+def postage_stamps(name, col, loc, count=4, rng=None):
+    """A few used stamps, slightly curled, perforated edges."""
+    rng = rng or random.Random(3)
+    root = _group(name, col, loc)
+    for i in range(count):
+        colr = rng.choice(STAMP_COLOURS)
+        sw, sh = rng.choice([(0.022, 0.026), (0.026, 0.022), (0.02, 0.024)])
+        frame = M.paper("StampPaper", "#f1ebdc", rough=0.7, age=0.4)
+        s = box(f"{name}_{i}", sw, sh, 0.00012, (rng.uniform(-0.03, 0.03), rng.uniform(-0.03, 0.03),
+                                                0.00006 + i * 0.00015), frame, col)
+        s.rotation_euler = (0, 0, rng.uniform(-0.5, 0.5))
+        _parent(s, root)
+        ink = box(f"{name}_{i}_ink", sw * 0.78, sh * 0.78, 0.00005, (0, 0, 0.00009),
+                  M.paper(f"StampInk{colr}", colr, rough=0.6, age=0.5), col)
+        _parent(ink, s)
+        # perforation: a ring of tiny bites along each edge
+        bites = M.paper("StampBite", "#d9cfb8", rough=0.8, age=0.3)
+        for k in range(8):
+            for ex, ey, ox, oy in ((-sw / 2, -sh / 2, sw / 7, 0), (-sw / 2, sh / 2, sw / 7, 0)):
+                bt = cylinder(f"{name}_{i}_b", 0.0006, 0.00016, (ex + ox * k, ey + oy * k, -0.00002), bites, col, 8)
+                _parent(bt, s)
+    return root
+
+
+def matchbox(name, col, loc, rot_z=0.0, label="#c2412f", open_frac=0.4, rng=None):
+    """A safety-match box with its drawer half out, a few matches and one spent one beside it."""
+    rng = rng or random.Random(5)
+    root = _group(name, col, loc, rot_z)
+    w, d, h = 0.053, 0.036, 0.016
+    card = M.paper(f"{name}_card", label, rough=0.7, age=0.5)
+    strike = M.paper(f"{name}_strike", "#4a2a1e", rough=0.95, age=0.2)
+    inner = M.paper(f"{name}_tray", "#d9c49b", rough=0.8, age=0.4)
+    sleeve = box(f"{name}_sleeve", w, d, h, (0, 0, h / 2), card, col, bevel=0.0004)
+    _parent(sleeve, root)
+    for sy in (-1, 1):
+        s = box(f"{name}_strip", w * 0.9, 0.0004, h * 0.7, (0, sy * d / 2, h / 2), strike, col)
+        _parent(s, root)
+    tray_x = w * open_frac
+    tray = box(f"{name}_tray", w - 0.002, d - 0.002, h - 0.002, (tray_x, 0, h / 2), inner, col, bevel=0.0003)
+    _parent(tray, root)
+    wood = M.wood(f"{name}_matchwood", "pine", varnish=0.0, wear=0.0, scale=8.0, grain_axis="X")
+    head = M.plastic(f"{name}_head", "#8a1e1a", rough=0.6)
+    burnt = M.plastic(f"{name}_burnt", "#141210", rough=0.8)
+    for i in range(6):
+        y = -d / 2 + 0.006 + i * 0.0045
+        m = box(f"{name}_match", 0.046, 0.0022, 0.0022, (tray_x + 0.001, y, h - 0.003), wood, col)
+        m.rotation_euler = (0, 0, rng.uniform(-0.04, 0.04))
+        _parent(m, root)
+        hd = box(f"{name}_mhead", 0.004, 0.0032, 0.003, (tray_x + 0.025, y, h - 0.003), head, col, bevel=0.0012)
+        _parent(hd, root)
+    spent = box(f"{name}_spent", 0.03, 0.0022, 0.0022, (-0.05, 0.03, 0.0011), wood, col)
+    spent.rotation_euler = (0, 0, rng.uniform(0.3, 1.2))
+    _parent(spent, root)
+    char = box(f"{name}_char", 0.012, 0.0024, 0.0024, (0.017, 0, 0), burnt, col, bevel=0.0009)
+    _parent(char, spent)
+    return root
+
+
+def tea_towel(name, col, loc, rot_z=0.0, color="#f0ebdf", stripe="#3f5d8a"):
+    """A folded linen tea towel with a woven stripe, its folds slightly soft."""
+    root = _group(name, col, loc, rot_z)
+    cloth = M.fabric(f"{name}_linen", color, threads_per_m=2200, rough=0.9, sheen=0.5, pattern="stripe",
+                     pattern_color=stripe, pattern_scale=8.0)
+    for i in range(3):
+        f = box(f"{name}_fold{i}", 0.24 - i * 0.003, 0.16 - i * 0.002, 0.0028, (i * 0.0015, i * 0.001,
+                                                                                 0.0014 + i * 0.0026),
+                cloth, col, bevel=0.0012, segments=3)
+        _parent(f, root)
+    return root
+
+
+def sugar_bowl(name, col, loc, rot_z=0.0, color="#e8e2d4", spoon=True):
+    """Lidded sugar bowl with a teaspoon handle poking out from under the lid."""
+    root = _group(name, col, loc, rot_z)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.04, speckle=0.15, crazing=0.35)
+    bowl = lathe(f"{name}_bowl", [(0.0, 0.0), (0.028, 0.0), (0.03, 0.004), (0.045, 0.03), (0.046, 0.052),
+                                  (0.043, 0.054), (0.041, 0.05), (0.028, 0.009), (0.0, 0.008)], 64, glaze, col)
+    add_subsurf(bowl, 1, 2)
+    _parent(bowl, root)
+    lid = lathe(f"{name}_lid", [(0.0, 0.074), (0.007, 0.073), (0.008, 0.068), (0.012, 0.064), (0.045, 0.057),
+                                (0.047, 0.054), (0.04, 0.053), (0.0, 0.06)], 64, glaze, col)
+    lid.rotation_euler = (math.radians(4), 0, 0)
+    _parent(lid, root)
+    if spoon:
+        sp = box(f"{name}_spoon", 0.006, 0.075, 0.0016, (0.0, 0.05, 0.068), M.metal("Spoon", "#cfd1d3", 0.2, 0.4, 0.2),
+                 col, bevel=0.0007)
+        sp.rotation_euler = (math.radians(-22), 0, 0)
+        _parent(sp, root)
+    return root
+
+
+def newspaper(name, col, loc, rot_z=0.0):
+    """A folded newspaper: thick folded stack of newsprint with columns of type."""
+    root = _group(name, col, loc, rot_z)
+    paper = M.paper(f"{name}_news", "#e6e0d0", rough=0.85, age=0.5, ink_lines=True, line_color="#3a3a3a")
+    for i in range(4):
+        sheet = box(f"{name}_sheet{i}", 0.29 - i * 0.002, 0.2, 0.0015, (i * 0.0008, 0, 0.00075 + i * 0.0015), paper, col,
+                    bevel=0.0007)
+        sheet.rotation_euler = (0, 0, (i - 1.5) * 0.008)
+        _parent(sheet, root)
+    head = box(f"{name}_masthead", 0.2, 0.025, 0.0002, (0.0, 0.07, 0.0062), M.plastic("Masthead", "#1d1d1d", 0.6), col)
+    _parent(head, root)
+    pic = box(f"{name}_photo", 0.08, 0.06, 0.0002, (-0.07, 0.0, 0.0062), M.plastic("NewsPhoto", "#5c5a56", 0.7), col)
+    _parent(pic, root)
+    return root
+
+
+def teddy_bear(name, col, loc, rot_z=0.0, color="#8a6440"):
+    """A well-loved sitting teddy bear: plush body, head, ears, limbs, button eyes, worn paw pads."""
+    root = _group(name, col, loc, rot_z)
+    plush = M.fabric(f"{name}_plush", color, threads_per_m=600, rough=0.95, sheen=1.0)
+    pad = M.fabric(f"{name}_pads", "#d4b48a", threads_per_m=1600, rough=0.9, sheen=0.4)
+    eye = M.plastic(f"{name}_eye", "#0c0b0a", rough=0.1, coat=1.0)
+
+    def blob(nm, r, loc_, scale=(1, 1, 1), mat=plush):
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=32, ring_count=16, location=loc_)
+        o = bpy.context.object
+        o.name = f"{name}_{nm}"
+        o.scale = scale
+        o.data.materials.append(mat)
+        set_smooth(o)
+        for c in o.users_collection:
+            c.objects.unlink(o)
+        col.objects.link(o)
+        o.parent = root
+        return o
+    blob("body", 0.07, (0, 0, 0.075), (0.9, 0.8, 1.05))
+    blob("head", 0.055, (0, -0.01, 0.18))
+    blob("muzzle", 0.025, (0, -0.058, 0.17), (1.0, 0.8, 0.8), pad)
+    blob("nose", 0.008, (0, -0.078, 0.178), (1.3, 0.8, 0.8), eye)
+    for s in (-1, 1):
+        blob("ear", 0.02, (s * 0.042, 0.0, 0.225), (1, 0.6, 1))
+        blob("eye", 0.0055, (s * 0.022, -0.05, 0.195), mat=eye)
+        arm = blob("arm", 0.025, (s * 0.07, -0.02, 0.09), (0.8, 0.8, 1.6))
+        arm.rotation_euler = (math.radians(-25), s * math.radians(20), 0)
+        leg = blob("leg", 0.03, (s * 0.045, -0.06, 0.03), (0.9, 1.6, 0.85))
+        blob("foot", 0.022, (s * 0.045, -0.105, 0.032), (1.0, 0.4, 1.1), pad)
+    return root
+
+
+def rolled_rug(name, col, loc, rot_z=0.0, length=1.2, radius=0.09, color="#7a3a2c"):
+    """A rolled-up rug tied with string, lying on the floor: you can see the spiral at the ends."""
+    root = _group(name, col, loc, rot_z)
+    wool = M.fabric(f"{name}_wool", color, threads_per_m=500, rough=0.95, sheen=0.4, pattern="gingham",
+                    pattern_color="#c9a66b", pattern_scale=4.0)
+    roll = cylinder(f"{name}_roll", radius, length, (0, -length / 2, radius), wool, col, 48,
+                    rot=(math.radians(-90), 0, 0))
+    roll.location = (0, -length / 2, radius)
+    _parent(roll, root)
+    edge = M.fabric(f"{name}_edge", "#3a2018", threads_per_m=500, rough=0.95, sheen=0.3)
+    for k in range(4):  # spiral layers visible at the ends
+        for y in (-length / 2 - 0.0015, length / 2 + 0.0015):
+            ring = cylinder(f"{name}_layer{k}", radius * (1 - k * 0.22), 0.002, (0, y, radius), edge if k % 2 else wool,
+                            col, 32, rot=(math.radians(-90), 0, 0))
+            _parent(ring, root)
+    twine = M.fabric(f"{name}_twine", "#a5865c", threads_per_m=2500, rough=0.9, sheen=0.4)
+    for y in (-length * 0.3, length * 0.3):
+        t = cylinder(f"{name}_tie", radius + 0.003, 0.006, (0, y, radius), twine, col, 32, rot=(math.radians(-90), 0, 0))
+        _parent(t, root)
+    return root
+
+
+def tissue_box(name, col, loc, rot_z=0.0, color="#9db4c0"):
+    """A box of tissues with one pulled half out, soft and crumpled."""
+    root = _group(name, col, loc, rot_z)
+    card = M.plastic(f"{name}_card", color, rough=0.5, coat=0.2)
+    b = box(f"{name}_box", 0.12, 0.12, 0.13, (0, 0, 0.065), card, col, bevel=0.003)
+    _parent(b, root)
+    slot = box(f"{name}_slot", 0.07, 0.025, 0.002, (0, 0, 0.13), M.plastic("TissueSlot", "#e9eef0", 0.6), col,
+               bevel=0.0008)
+    _parent(slot, root)
+    tissue = M.fabric(f"{name}_tissue", "#fbfaf6", threads_per_m=100, rough=1.0, sheen=0.2, translucent=0.4)
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=12, y_segments=12, size=0.045)
+    rng = random.Random(9)
+    for v in bm.verts:
+        v.co.z = 0.04 * (1 - (abs(v.co.x) / 0.045) ** 2) + rng.uniform(-0.004, 0.004)
+        v.co.y *= 0.4 + 0.6 * (v.co.z / 0.04)
+    t = mesh_object(f"{name}_tissue", bm, col, mat=tissue)
+    t.location = (0, 0, 0.13)
+    t.rotation_euler = (math.radians(90), 0, 0)
+    sol = t.modifiers.new("Thick", "SOLIDIFY")
+    sol.thickness = 0.0004
+    add_subsurf(t, 1, 2)
+    set_smooth(t)
+    _parent(t, root)
+    return root
+
+
+def ring_dish(name, col, loc, rot_z=0.0, color="#e9e3d6"):
+    """A little china trinket dish with a gold ring and a pair of earrings in it."""
+    root = _group(name, col, loc, rot_z)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.03, speckle=0.1, crazing=0.2)
+    dish = lathe(f"{name}_dish", [(0.0, 0.0), (0.025, 0.0), (0.028, 0.003), (0.045, 0.013), (0.047, 0.016),
+                                  (0.044, 0.016), (0.026, 0.006), (0.0, 0.005)], 64, glaze, col)
+    _parent(dish, root)
+    gold = M.metal(f"{name}_gold", "#d4a94e", rough=0.12, smudge=0.2, tarnish=0.05)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.0095, minor_radius=0.0013, major_segments=48, minor_segments=12,
+                                     location=(0.008, 0.004, 0.0072))
+    ring = bpy.context.object
+    ring.name = f"{name}_ring"
+    ring.rotation_euler = (math.radians(12), 0, 0)
+    ring.data.materials.append(gold)
+    set_smooth(ring)
+    for c in ring.users_collection:
+        c.objects.unlink(ring)
+    col.objects.link(ring)
+    _parent(ring, root)
+    pearl = M.ceramic(f"{name}_pearl", "#f2ece0", rough=0.15, speckle=0.0)
+    for k in range(2):
+        e = cylinder(f"{name}_earring{k}", 0.003, 0.006, (-0.012 + k * 0.007, -0.008, 0.0055), pearl, col, 16)
+        _parent(e, root)
+    return root
+
+
+def paper_coffee_cup(name, col, loc, rot_z=0.0, sleeve="#8a6a4a", lid=True):
+    """A takeaway coffee cup: tapered paper cup, card sleeve, plastic lid."""
+    root = _group(name, col, loc, rot_z)
+    cup = lathe(f"{name}_cup", [(0.0, 0.0), (0.028, 0.0), (0.029, 0.002), (0.04, 0.11), (0.0405, 0.112),
+                                (0.039, 0.112), (0.0, 0.11)], 48, M.paper(f"{name}_paper", "#f1efe9", 0.6, 0.1), col)
+    _parent(cup, root)
+    sl = lathe(f"{name}_sleeve", [(0.0325, 0.03), (0.0375, 0.075), (0.0365, 0.075), (0.0315, 0.03)], 48,
+               M.paper(f"{name}_sleevecard", sleeve, 0.85, 0.3), col)
+    _parent(sl, root)
+    if lid:
+        l_ = lathe(f"{name}_lid", [(0.0, 0.122), (0.03, 0.122), (0.036, 0.12), (0.042, 0.116), (0.042, 0.11),
+                                   (0.039, 0.109), (0.0, 0.109)], 48, M.plastic(f"{name}_lid", "#1c1c1c", 0.3), col)
+        _parent(l_, root)
+    return root
+
+
+def evidence_bag(name, col, loc, rot_z=0.0, rng=None):
+    """A clear plastic evidence bag with a red seal strip and a white write-on panel."""
+    rng = rng or random.Random(11)
+    root = _group(name, col, loc, rot_z)
+    plastic = M.glass(f"{name}_poly", "#f6f6f2", rough=0.25, ior=1.45, smudge=0.6, thin=True)
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=10, y_segments=14, size=1.0)
+    for v in bm.verts:
+        v.co.x *= 0.115
+        v.co.y *= 0.155
+        v.co.z = 0.004 + rng.uniform(-0.0015, 0.0015)
+    bag = mesh_object(f"{name}_bag", bm, col, mat=plastic)
+    add_subsurf(bag, 1, 2)
+    set_smooth(bag)
+    _parent(bag, root)
+    seal = box(f"{name}_seal", 0.23, 0.012, 0.0006, (0, 0.14, 0.0045), M.plastic(f"{name}_red", "#b0201c", 0.4), col)
+    _parent(seal, root)
+    panel = box(f"{name}_panel", 0.15, 0.09, 0.0003, (0, -0.08, 0.0042),
+                M.paper(f"{name}_panel", "#f4f2ea", 0.7, 0.1, ink_lines=True, line_color="#2a2a40"), col)
+    _parent(panel, root)
+    inside = box(f"{name}_item", 0.06, 0.035, 0.008, (0.02, 0.05, 0.002),
+                 M.metal(f"{name}_item", "#6b6b6b", 0.35, 0.5, 0.3), col, bevel=0.002)
+    inside.rotation_euler = (0, 0, rng.uniform(-0.6, 0.6))
+    _parent(inside, root)
+    return root
+
+
+def manila_folder(name, col, loc, rot_z=0.0, papers=3, rng=None):
+    """A manila case file with a few sheets poking out and a typed label."""
+    rng = rng or random.Random(13)
+    root = _group(name, col, loc, rot_z)
+    manila = M.paper(f"{name}_manila", "#d8bf86", 0.8, 0.5)
+    f = box(f"{name}_folder", 0.235, 0.31, 0.0025, (0, 0, 0.00125), manila, col, bevel=0.0006)
+    _parent(f, root)
+    tab = box(f"{name}_tab", 0.08, 0.018, 0.0012, (0.06, 0.163, 0.0006), manila, col, bevel=0.0004)
+    _parent(tab, root)
+    label = box(f"{name}_label", 0.07, 0.012, 0.0002, (0.06, 0.163, 0.0013),
+                M.paper(f"{name}_label", "#f2f0e8", 0.7, 0.2, ink_lines=True, line_color="#222222"), col)
+    _parent(label, root)
+    sheet = M.paper(f"{name}_sheets", "#f0ece0", 0.75, 0.3, ink_lines=True, line_color="#333333")
+    for i in range(papers):
+        s = box(f"{name}_sheet{i}", 0.21, 0.297, 0.0003, (rng.uniform(-0.01, 0.03), rng.uniform(-0.03, 0.01),
+                                                          0.0027 + i * 0.0004), sheet, col)
+        s.rotation_euler = (0, 0, rng.uniform(-0.12, 0.12))
+        _parent(s, root)
+    return root

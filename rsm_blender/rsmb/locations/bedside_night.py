@@ -176,6 +176,11 @@ def build(ctx: Ctx):
                (0, 0, math.radians(80)), rng)
     if opt(ctx, "phone", False):
         _phone(col, Vector((tx + 0.16, ty - 0.02, surf)), math.radians(rng.uniform(-25, 10)))
+    if clutter > 0.5 and not opt(ctx, "phone", False):
+        P.ring_dish("RingDish", col, (tx + 0.205, ty - 0.045, surf), math.radians(rng.uniform(0, 360)))
+    if clutter > 0.4:
+        # tissues on the floor beside the table, half in shadow
+        P.tissue_box("Tissues", col, (tx - 0.36, ty - 0.05, 0.0), math.radians(rng.uniform(-20, 20)))
     if s.get("extra_photos", True) and extras and clutter > 0.6:
         scatter_prints(extras[:1], col, Vector((tx + 0.16, ty - 0.13, surf)), 0.02, rng, surf)
 

@@ -10,7 +10,7 @@ from .. import materials as M
 from .. import props as P
 from ..camera_rig import Anchors
 from ..util import add_bevel, box, cylinder
-from .common import (Ctx, Room, aim_sun_through, curtain, opt, outdoor_backdrop, place_card, scatter_prints,
+from .common import (Ctx, Room, aim_sun_through, curtain, opt, outdoor_backdrop, place_card, rest_z, scatter_prints,
                      steam, switched_on, wall, window)
 
 DESK_Z = 0.76
@@ -122,9 +122,10 @@ def build(ctx: Ctx):
                             frame_imgs[0] if frame_imgs else None, size=(0.15, 0.2), wood_preset="walnut")
     rack_point = Vector((0.24, 0.6, surf + 0.1))
     if clutter > 0.15:
-        P.mug("Mug", col, (-0.27, 0.07, surf), math.radians(rng.uniform(0, 360)), color="#6c8a7e")
+        mug_z = rest_z(-0.27, 0.07, surf)  # off the desk mat: on the bare wood
+        P.mug("Mug", col, (-0.27, 0.07, mug_z), math.radians(rng.uniform(0, 360)), color="#6c8a7e")
         if opt(ctx, "steam", False):
-            steam(col, Vector((-0.27, 0.07, surf + 0.075)), name="MugSteam")
+            steam(col, Vector((-0.27, 0.07, mug_z + 0.075)), name="MugSteam")
         P.book_stack("Books", col, (0.5, 0.42, surf), count=3 + int(clutter * 2), rng=rng, rot_z=math.radians(8))
     if clutter > 0.35:
         P.reading_glasses("Glasses", col, (0.23, 0.08, surf), math.radians(-25))
@@ -139,6 +140,14 @@ def build(ctx: Ctx):
     if s.get("extra_photos", True) and extras:
         scatter_prints(extras[:3], col, Vector((anchor.x, anchor.y - 0.05, surf)), 0.24, rng, surf,
                        avoid=Vector((anchor.x, anchor.y, surf)), avoid_r=0.12)
+    # the little things: a notebook, stray paperclips, stamps waiting for the letters
+    if clutter > 0.45:
+        P.notebook("Notebook", col, (0.5, 0.13, rest_z(0.5, 0.13, surf)), math.radians(rng.uniform(-12, 4)),
+                   color=rng.choice(["#2c3e50", "#6a2424", "#2f4a38"]))
+        for k, (px, py) in enumerate(((-0.07, 0.05), (-0.03, 0.085), (0.36, 0.05))[: 1 + int(clutter * 2.5)]):
+            P.paperclip(f"Clip{k}", col, (px, py, rest_z(px, py, surf)), rng.uniform(0, math.pi), rusty=k == 2)
+    if clutter > 0.6 and opt(ctx, "letters", True):
+        P.postage_stamps("Stamps", col, (-0.4, 0.27, rest_z(-0.4, 0.27, surf)), 3, rng)
 
     if opt(ctx, "bookcase", True):
         _bookcase(col, rng, 1.45, Y1 - 0.2)

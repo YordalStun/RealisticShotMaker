@@ -122,6 +122,11 @@ def build(ctx: Ctx):
                         wood_preset="mahogany", lean=8)
     if clutter > 0.55:
         P.vase_with_stems("MantelVase", col, (0.72, fy - 0.12, surf), rng, color="#d9cfb8")
+    if clutter > 0.35:
+        # matches for the candles, and a blue-and-white ginger jar
+        P.matchbox("Matches", col, (0.3, fy - 0.2, surf), math.radians(rng.uniform(-25, 25)), rng=rng)
+        P.sugar_bowl("GingerJar", col, (0.1, fy - 0.13, surf), math.radians(rng.uniform(0, 360)), color="#c9d6e4",
+                     spoon=False)
     if opt(ctx, "christmas", False):
         front = fy - 0.245
         pts = [Vector((x, front, surf - 0.02)) for x in (-0.8, -0.4, 0.0, 0.4, 0.8)]

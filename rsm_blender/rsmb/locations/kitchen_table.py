@@ -9,8 +9,8 @@ from .. import materials as M
 from .. import props as P
 from ..camera_rig import Anchors
 from ..util import box, cylinder
-from .common import (Ctx, Room, crumbs, curtain, drink_ring, opt, outdoor_backdrop, place_card, scatter_prints,
-                     switched_on, wall, window)
+from .common import (Ctx, Room, crumbs, curtain, drink_ring, opt, outdoor_backdrop, place_card, rest_z,
+                     scatter_prints, switched_on, wall, window)
 
 TABLE_Z = 0.77
 
@@ -168,6 +168,14 @@ def build(ctx: Ctx):
     if s.get("extra_photos", True) and extras:
         scatter_prints(extras[:3], col, Vector((anchor.x, anchor.y - 0.05, surf)), 0.26, rng, surf,
                        avoid=Vector((anchor.x, anchor.y, surf)), avoid_r=0.13)
+    # tea towel dropped at the end of the table, sugar bowl by the teapot, the morning paper
+    if clutter > 0.35:
+        P.tea_towel("TeaTowel", col, (-0.66, 0.1, rest_z(-0.66, 0.1, surf)), math.radians(rng.uniform(-15, 15)),
+                    stripe=rng.choice(["#3f5d8a", "#a63a32", "#3f6a48"]))
+        P.sugar_bowl("SugarBowl", col, (0.2, 0.66, rest_z(0.2, 0.66, surf)), math.radians(rng.uniform(0, 360)))
+    if clutter > 0.55:
+        P.newspaper("Newspaper", col, (-0.66, 0.38, rest_z(-0.66, 0.38, surf) + 0.0005),
+                    math.radians(rng.uniform(70, 110)))
 
     ctx.sun_window = dict(centre=(X0, side["c"], (side["b"] + side["t"]) / 2), bottom=side["b"], top=side["t"],
                           along=(0, 1, 0), width=side["w"], panes=2, rows=2)

@@ -293,6 +293,13 @@ def _support_plane(pts, zs, max_tilt_deg: float = 22.0):
     return (sx, sy, a), normal
 
 
+def rest_z(x: float, y: float, near: float, reach: float = 0.06) -> float:
+    """Height a small prop should stand at: whatever is really under (x, y) (desk mat, runner, table)."""
+    bpy.context.view_layer.update()
+    z = surface_z(x, y, near, reach)
+    return near if z is None else z
+
+
 def footprint_heights(meta, where: Vector, yaw: float) -> list[float]:
     bpy.context.view_layer.update()
     out = []

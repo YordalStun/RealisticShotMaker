@@ -134,6 +134,86 @@ def _text(col, body, font, size, loc, rot, mat, name="Note"):
     return o
 
 
+def _board_glass(seed: float = 0.0):
+    """Toughened glass that has been used: a few fingerprints and greasy smudges where people lean in,
+    ghosts of wiped-off marker, the odd speck of dust and a couple of hairline scratches that only catch
+    the light at an angle. Green edges from the iron in float glass. Kept subtle: it should read as
+    glass, not as dirt."""
+    from ..util import Nodes, new_material, srgb
+    mat = new_material("BoardGlass")
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+
+    def mapped(scale, loc=(0, 0, 0)):
+        mp = n.new("ShaderNodeMapping", Scale=scale, Location=(seed + loc[0], loc[1], loc[2]))
+        n.link(tc, "Object", mp, "Vector")
+        return mp
+
+    # greasy patches and fingerprints: rare blotches with a fine whorled texture inside
+    blot = n.new("ShaderNodeTexNoise", Scale=2.6, Detail=2.0, Roughness=0.5)
+    n.link(mapped((1, 1, 1)), None, blot, "Vector")
+    blot_m = n.ramp((blot, "Fac"), [(0.64, (0, 0, 0)), (0.74, (1, 1, 1))])
+    whorl = n.new("ShaderNodeTexWave", _wave_type="RINGS", Scale=55.0, Distortion=9.0, Detail=4.0, **{"Detail Scale": 2.0})
+    n.link(mapped((1, 1, 1), (3.1, 0, 0)), None, whorl, "Vector")
+    smudge = n.math("MULTIPLY", (blot_m, "Color"), n.math("ADD", 0.35, n.math("MULTIPLY", (whorl, "Fac"), 0.65)))
+
+    # ghost of erased marker: faint horizontal wipe streaks in a few areas
+    streak = n.new("ShaderNodeTexNoise", Scale=1.0, Detail=3.0)
+    n.link(mapped((1.6, 1, 28.0), (7.0, 0, 0)), None, streak, "Vector")
+    streak_m = n.ramp((streak, "Fac"), [(0.6, (0, 0, 0)), (0.7, (1, 1, 1))])
+    region = n.new("ShaderNodeTexNoise", Scale=1.4, Detail=1.0)
+    n.link(mapped((1, 1, 1), (11.0, 0, 0)), None, region, "Vector")
+    region_m = n.ramp((region, "Fac"), [(0.55, (0, 0, 0)), (0.66, (1, 1, 1))])
+    ghost = n.math("MULTIPLY", (streak_m, "Color"), (region_m, "Color"))
+
+    # dust specks: tiny dots in a small fraction of cells
+    vor = n.new("ShaderNodeTexVoronoi", Scale=650.0)
+    n.link(mapped((1, 1, 1)), None, vor, "Vector")
+    speck = n.math("LESS_THAN", (vor, "Distance"), 0.09)
+    pick = n.math("GREATER_THAN", (vor, "Color"), 0.82)
+    dust = n.math("MULTIPLY", speck, pick)
+
+    # hairline scratches: edges of long thin voronoi cells, only in a couple of places
+    sc = n.new("ShaderNodeTexVoronoi", _feature="DISTANCE_TO_EDGE", Scale=6.0)
+    n.link(mapped((14.0, 1, 0.6), (2.0, 0, 5.0)), None, sc, "Vector")
+    line = n.math("LESS_THAN", (sc, "Distance"), 0.004)
+    where = n.new("ShaderNodeTexNoise", Scale=1.8, Detail=1.0)
+    n.link(mapped((1, 1, 1), (19.0, 0, 0)), None, where, "Vector")
+    where_m = n.ramp((where, "Fac"), [(0.66, (0, 0, 0)), (0.72, (1, 1, 1))])
+    scratch = n.math("MULTIPLY", line, (where_m, "Color"))
+
+    rough = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.14), n.math("MULTIPLY", ghost, 0.07)),
+                   n.math("MULTIPLY", scratch, 0.3))
+    haze = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.025), n.math("MULTIPLY", ghost, 0.035)),
+                  n.math("ADD", n.math("MULTIPLY", dust, 0.5), n.math("MULTIPLY", scratch, 0.12)), clamp=True)
+
+    # very slight roller wave in the float glass: bends reflections, never the view through it
+    wave = n.new("ShaderNodeTexNoise", Scale=0.7, Detail=1.0)
+    n.link(mapped((1, 1, 1), (23.0, 0, 0)), None, wave, "Vector")
+    bump = n.new("ShaderNodeBump", Strength=0.04, Distance=0.0004)
+    n.link(wave, "Fac", bump, "Height")
+
+    glass = n.new("ShaderNodeBsdfPrincipled", IOR=1.52)
+    glass.inputs["Transmission Weight"].default_value = 1.0
+    glass.inputs["Base Color"].default_value = srgb("#f4faf6")
+    n.link(rough, None, glass, "Roughness")
+    n.link(bump, None, glass, "Normal")
+    film_col = n.mix("RGBA", ghost, srgb("#e9ece9"), srgb("#5f6f92"))
+    film = n.new("ShaderNodeBsdfPrincipled", Roughness=0.85)
+    n.link(film_col, None, film, "Base Color")
+    mix = n.new("ShaderNodeMixShader")
+    n.link(haze, None, mix, "Fac")
+    n.link(glass, None, mix, 1)
+    n.link(film, None, mix, 2)
+    # iron in the glass: clear face-on, green when you look through its edge
+    vol = n.new("ShaderNodeVolumeAbsorption", Density=6.0)
+    vol.inputs["Color"].default_value = srgb("#79b394")
+    out = n.new("ShaderNodeOutputMaterial", _target="ALL")
+    n.link(mix, None, out, "Surface")
+    n.link(vol, None, out, "Volume")
+    return mat
+
+
 def _stroke(col, pts, width, mat, name="Stroke"):
     """A flat marker stroke along a polyline on the glass (XZ plane, facing -Y)."""
     cu = bpy.data.curves.new(name, "CURVE")
@@ -279,7 +359,8 @@ def _desk(col, at: Vector, rot, rng, monitors_on: bool, lamp_on: bool, idx: int)
                  bevel=0.004)
         kb.parent = root
     # case files and a mug
-    for k in range(rng.randint(2, 5)):
+    n_files = rng.randint(2, 5)
+    for k in range(n_files):
         f = box(f"Folder{idx}{k}", 0.24, 0.31, 0.012, (-0.45 + rng.uniform(-0.05, 0.05), -0.1 + rng.uniform(-0.05, 0.05),
                                                        0.762 + k * 0.013),
                 M.paper(f"Manila{k % 3}", ["#d9b77a", "#c9a868", "#b8946a"][k % 3], 0.8, 0.5), col, bevel=0.002)
@@ -288,6 +369,14 @@ def _desk(col, at: Vector, rot, rng, monitors_on: bool, lamp_on: bool, idx: int)
     m = P.mug(f"DeskMug{idx}", col, (0.25, -0.2, 0.755), rng.uniform(0, 6.28), rng.choice(["#e8e4dc", "#2f3e52", "#8c2f2f"]),
               coffee=0.4)
     m.parent = root
+    # takeaway coffees from the late shift, and an evidence bag dropped on the case files
+    for k in range(rng.randint(1, 2)):
+        c = P.paper_coffee_cup(f"Takeaway{idx}{k}", col, (0.6 - k * 0.09, -0.26 + k * 0.05, 0.755),
+                               rng.uniform(0, 6.28), sleeve=rng.choice(["#8a6a4a", "#2f5a3a", "#6a2424"]))
+        c.parent = root
+    bag = P.evidence_bag(f"EvidenceBag{idx}", col, (-0.43, -0.08, 0.762 + n_files * 0.013 + 0.001),
+                         rng.uniform(-0.4, 0.4), rng)
+    bag.parent = root
     light = None
     if lamp_on:
         lamp, light = P.bankers_lamp(f"DeskLamp{idx}", col, (0.55, 0.15, 0.755), math.radians(rng.uniform(-30, 30)),
@@ -456,7 +545,7 @@ def build(ctx: Ctx):
     by = 0.0
     face_y = by - GLASS_T / 2   # front surface of the glass
     if board_kind == "glass":
-        glass = M.glass("BoardGlass", "#eef6f2", 0.0, 1.52, smudge=0.5)
+        glass = _board_glass(rng.uniform(0, 50))
         g = box("BoardGlass", BOARD_W, GLASS_T, BOARD_H, (0, by, BOARD_Z), glass, col, bevel=0.002)
         chrome = M.metal("Standoff", "#d9d9d9", 0.12, 0.3, 0.02)
         alu = M.metal("Aluminium", "#b9bcbf", 0.3, 0.3, 0.05, brushed=True)
