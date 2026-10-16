@@ -1,0 +1,4 @@
+Sample photographs bundled with RealisticShotMaker (taken from the scikit-image sample data):
+
+cat.png     "Chelsea the cat" by Stefan van der Walt. No copyright restrictions, CC0.
+coffee.png  "Coffee cup" by Rachel Michetti, courtesy of Pikolo Espresso Bar. No copyright restrictions, CC0.

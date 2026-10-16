@@ -67,9 +67,11 @@ class SceneSpec:
 class CameraSpec:
     move: str = "push_in"             # see catalog.MOVES
     framing: str = "close"            # see catalog.FRAMINGS
+    lens: str = "vintage_prime"       # see catalog.LENSES (optical character)
+    body: str = "film_35"             # see catalog.BODIES (sensor/film behaviour)
     focal_mm: float = 85.0
     fstop: float = 2.0
-    sensor: str = "full_frame"        # full_frame | super35
+    sensor: str = "auto"              # auto (from body) | full_frame | super35 | ...
     angle: float = 0.0                # degrees, rotates the default viewpoint around the subject
     height: float = 0.0               # -1..1 lower / higher camera
     duration: float = 8.0             # seconds
@@ -79,17 +81,23 @@ class CameraSpec:
     aperture_blades: int = 9
     anamorphic: bool = False          # oval bokeh
     shutter_angle: float = 180.0      # motion blur, degrees. 0 disables
-    focus_breathing: float = 0.3      # 0..1 tiny focus hunting
+    focus_drift: float = 0.3          # 0..1 a human focus puller's small lag, overshoot and drift
+    focus_target: str = "photo"       # photo | face (centre of the picture) | auto
 
 
 @dataclass
 class LookSpec:
     grade: str = "warm_nostalgia"     # see catalog.GRADES
     exposure: float = 0.0             # stops
-    grain: float = 0.35               # 0..1
-    vignette: float = 0.35            # 0..1
-    halation: float = 0.35            # 0..1 glow around highlights
-    chromatic_aberration: float = 0.15  # 0..1
+    grain: float = -1.0               # -1 = from camera body, else 0..1
+    vignette: float = 0.25            # 0..1 extra vignette on top of the lens' own fall-off
+    halation: float = -1.0            # -1 = from camera body, else 0..1 (red glow around highlights)
+    chromatic_aberration: float = 1.0  # multiplier on the lens' own colour fringing
+    lens_character: float = 1.0       # multiplier on all optical quirks (0 = perfect lens)
+    gate_weave: float = -1.0          # -1 = from camera body, else 0..1
+    flicker: float = -1.0             # -1 = from camera body, else 0..1
+    bloom: float = 0.25               # 0..1 veiling glare / diffusion filter
+    lens_dirt: float = 0.2            # 0..1 dust and smudges on the front element
     letterbox: str = "none"           # none | 1.85 | 2.39
 
 

@@ -5,7 +5,7 @@ Outputs (all the same size, card coordinates, origin top-left):
   color   sRGB albedo + alpha (card outline, wear chips, pin hole)
   rough   roughness 0..1
   height  height map 0..1 (16-bit), 0.5 = card surface
-  back    back-side albedo + alpha (mirrored so it lines up when viewed from behind)
+  back    back-side albedo + alpha (same UV layout as the front)
 and a metadata dict used by Blender to bend, curl and fold the card mesh.
 """
 from __future__ import annotations
@@ -366,8 +366,7 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
                       int(r.uniform(40, 160)))
     back = lerp(back, np.array([0.25, 0.24, 0.23], np.float32), (scuff_cv.array() * 0.6)[..., None])
     back = lerp(back, back * 1.6 + 0.04, (edge_prox * 0.3 * (age + wear) / 2)[..., None])
-    back = back[:, ::-1].copy()
-    back_alpha = alpha[:, ::-1].copy()
+    back_alpha = alpha.copy()  # same UVs as the front: the solidified card shares them
 
     meta = dict(
         film=p.film,

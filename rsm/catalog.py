@@ -100,6 +100,8 @@ CONDITIONS: dict[str, dict] = {
 }
 
 BUILTIN_PHOTOS: dict[str, str] = {
+    "cat": "The family cat (real photo)",
+    "coffee": "Coffee cup (real photo)",
     "beach": "Family day at the beach",
     "garden": "Back garden in summer",
     "sunset": "Sunset over a field",
@@ -201,7 +203,83 @@ SENSORS = {
     # id: (name, sensor width mm, sensor height mm)
     "full_frame": ("Full frame", 36.0, 24.0),
     "super35": ("Super 35", 24.89, 18.66),
+    "film16": ("16 mm film", 12.52, 7.41),
+    "super8": ("Super 8 film", 5.79, 4.01),
 }
+
+
+@dataclass(frozen=True)
+class Lens(Option):
+    """Optical character, fed to the ray-traced lens shader. All 0..1 unless noted."""
+    blades: int = 9
+    blade_curvature: float = 0.8   # 0 straight polygon, 1 circular
+    blade_rotation: float = 0.0    # degrees
+    cat_eye: float = 0.4           # mechanical vignetting: bokeh turns into lemons at the edges
+    swirl: float = 0.0             # tangential astigmatism, Petzval swirl
+    spherical: float = 0.3         # spherical aberration: glow wide open, bright-rimmed bokeh
+    ca_long: float = 0.3           # longitudinal colour: purple/green fringes on out-of-focus edges
+    ca_lat: float = 0.2            # lateral colour: red/blue edges towards the corners
+    distortion: float = -0.02      # radial distortion k1 (negative = barrel)
+    field_curvature: float = 0.1   # corners focus at a different distance
+    breathing: float = 0.04        # angle of view change when focusing close
+    bokeh_rim: float = 0.2         # soap-bubble edge on bokeh
+    onion: float = 0.0             # onion-ring texture inside bokeh (aspherical elements)
+    vignette: float = 0.6          # natural cos^4 fall-off
+    squeeze: float = 1.0           # anamorphic aperture ratio (oval bokeh)
+    flare: float = 0.3             # veiling glare / ghosts in post
+    streak: float = 0.0            # horizontal anamorphic flare streaks
+
+
+LENSES: dict[str, Lens] = {l.id: l for l in [
+    Lens("modern_prime", "Modern cinema prime", "Clean and sharp. Round bokeh, very little fringing.",
+         blades=11, blade_curvature=1.0, cat_eye=0.25, swirl=0.0, spherical=0.1, ca_long=0.12, ca_lat=0.05,
+         distortion=-0.01, field_curvature=0.0, breathing=0.02, bokeh_rim=0.08, vignette=0.45, flare=0.15),
+    Lens("vintage_prime", "Vintage 1970s prime", "Soft glow wide open, slightly cat-eyed bokeh with bright "
+         "edges and purple fringing. The classic documentary look.",
+         blades=6, blade_curvature=0.55, cat_eye=0.6, swirl=0.12, spherical=0.5, ca_long=0.6, ca_lat=0.25,
+         distortion=-0.03, field_curvature=0.25, breathing=0.06, bokeh_rim=0.35, onion=0.12, vignette=0.8,
+         flare=0.45),
+    Lens("swirly_petzval", "Swirly Helios-style", "Strong swirling bokeh around the edges of the frame and "
+         "heavy vignetting. Very characterful.",
+         blades=8, blade_curvature=0.6, cat_eye=0.85, swirl=0.9, spherical=0.55, ca_long=0.7, ca_lat=0.3,
+         distortion=0.015, field_curvature=0.6, breathing=0.05, bokeh_rim=0.5, onion=0.08, vignette=0.95,
+         flare=0.5),
+    Lens("cinema_soft", "Warm cinema prime", "Gentle, warm rendering with smooth fall-off. Flattering and calm.",
+         blades=9, blade_curvature=0.9, cat_eye=0.45, swirl=0.05, spherical=0.3, ca_long=0.3, ca_lat=0.12,
+         distortion=-0.015, field_curvature=0.1, breathing=0.03, bokeh_rim=0.15, vignette=0.6, flare=0.3),
+    Lens("anamorphic", "Anamorphic", "Oval bokeh, horizontal flare streaks and gentle barrel distortion.",
+         blades=10, blade_curvature=0.9, cat_eye=0.5, swirl=0.1, spherical=0.35, ca_long=0.4, ca_lat=0.3,
+         distortion=-0.05, field_curvature=0.3, breathing=0.12, bokeh_rim=0.2, vignette=0.7, squeeze=2.0,
+         flare=0.5, streak=0.8),
+    Lens("macro", "Macro lens", "Built for extreme close-ups. Very clean, but breathes a lot when focusing.",
+         blades=9, blade_curvature=0.8, cat_eye=0.2, swirl=0.0, spherical=0.1, ca_long=0.2, ca_lat=0.05,
+         distortion=0.0, field_curvature=0.0, breathing=0.25, bokeh_rim=0.1, vignette=0.4, flare=0.15),
+]}
+
+
+@dataclass(frozen=True)
+class Body(Option):
+    sensor: str = "super35"
+    rolling_shutter: float = 0.0   # fraction of a frame the readout takes
+    grain: float = 0.3             # film grain / sensor noise amount
+    digital_noise: bool = False    # sensor noise (chroma + pattern) instead of film grain
+    gate_weave: float = 0.0
+    flicker: float = 0.0
+    halation: float = 0.3
+
+
+BODIES: dict[str, Body] = {b.id: b for b in [
+    Body("digital_cinema", "Digital cinema camera", "Large clean sensor, fast readout, fine noise.",
+         "super35", 0.08, 0.12, True, 0.0, 0.0, 0.1),
+    Body("mirrorless", "Mirrorless / DSLR", "Full-frame stills camera shooting video. Visible rolling shutter "
+         "on fast movement.", "full_frame", 0.45, 0.12, True, 0.0, 0.0, 0.0),
+    Body("film_35", "35 mm motion picture film", "Organic grain, subtle gate weave and red halation.",
+         "super35", 0.0, 0.4, False, 0.35, 0.15, 0.5),
+    Body("film_16", "16 mm film", "Heavier grain, more weave and flicker. Home-movie documentary feel.",
+         "film16", 0.0, 0.75, False, 0.7, 0.4, 0.6),
+    Body("super8", "Super 8", "Very grainy, unsteady and warm, like old home movies.",
+         "super8", 0.0, 1.0, False, 1.0, 0.7, 0.55),
+]}
 
 FOCAL_LENGTHS = [24, 35, 50, 65, 85, 100, 135]
 FSTOPS = [1.2, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 11.0, 16.0]

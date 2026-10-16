@@ -1,0 +1,281 @@
+"""Shared building blocks for locations: rooms, windows, curtains, outdoor
+backdrop and placing the instant prints."""
+from __future__ import annotations
+
+import math
+import random
+from dataclasses import dataclass, field
+
+import bmesh
+import bpy
+from mathutils import Euler, Matrix, Vector
+
+from .. import materials as M
+from ..polaroid_obj import build_card, card_size, image_centre_local
+from ..util import add_bevel, add_subsurf, box, link, mesh_object, set_smooth
+
+
+@dataclass
+class Ctx:
+    job: dict
+    spec: dict
+    col: bpy.types.Collection
+    rng: random.Random
+    quality: dict
+    work_dir: str
+    lights_on: bool = False
+    sun_window: dict | None = None  # filled by a location: dict(centre, normal, bottom, top) for aiming the sun
+
+    @property
+    def scene_spec(self):
+        return self.spec["scene"]
+
+
+@dataclass
+class Room:
+    min: Vector
+    max: Vector
+    windows: list = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Walls with openings
+# ---------------------------------------------------------------------------
+
+def wall(name, col, mat, axis: str, plane: float, span_min, span_max, z0, z1, thickness=0.12, openings=()):
+    """Axis-aligned wall. axis='y' → wall lies in the XZ plane at y=plane; 'x' → YZ plane at x=plane.
+    openings: list of (centre_along_span, width, bottom_z, top_z). Builds the wall from boxes around holes."""
+    pieces = []
+    # sort openings along the span
+    ops = sorted(openings, key=lambda o: o[0])
+    cursor = span_min
+    for c, w, b, t in ops:
+        lo, hi = c - w / 2, c + w / 2
+        if lo > cursor:
+            pieces.append((cursor, lo, z0, z1))
+        pieces.append((lo, hi, z0, b))     # below
+        pieces.append((lo, hi, t, z1))     # above
+        cursor = hi
+    if cursor < span_max:
+        pieces.append((cursor, span_max, z0, z1))
+    objs = []
+    for i, (a, b_, lo, hi) in enumerate(pieces):
+        if b_ - a < 1e-4 or hi - lo < 1e-4:
+            continue
+        mid = (a + b_) / 2
+        if axis == "y":
+            o = box(f"{name}_{i}", b_ - a, thickness, hi - lo, (mid, plane, (lo + hi) / 2), mat, col)
+        else:
+            o = box(f"{name}_{i}", thickness, b_ - a, hi - lo, (plane, mid, (lo + hi) / 2), mat, col)
+        objs.append(o)
+    return objs
+
+
+def window(name, col, axis: str, plane: float, centre: float, width: float, bottom: float, top: float,
+           inward: int, frame_mat=None, panes=(2, 3), wall_thickness=0.12, sill=True):
+    """Painted timber window with mullions, real glass panes and a sill.
+    inward: +1/-1 direction (along the wall normal axis) pointing into the room."""
+    frame_mat = frame_mat or M.wood(f"{name}_paint", "painted_white", varnish=0.3, wear=0.25, scale=2.0)
+    glass_mat = M.glass(f"{name}_glass", "#f7fbfa", 0.0, 1.52, smudge=0.35)
+    fw = 0.055   # frame width
+    depth = 0.07
+    h = top - bottom
+    objs = []
+
+    def place(sx_along, sy_depth, sz, along, z, depth_off=0.0):
+        if axis == "y":
+            return box(f"{name}_f", sx_along, sy_depth, sz, (along, plane + inward * depth_off, z), frame_mat, col,
+                       bevel=0.004)
+        return box(f"{name}_f", sy_depth, sx_along, sz, (plane + inward * depth_off, along, z), frame_mat, col,
+                   bevel=0.004)
+
+    # outer frame
+    objs.append(place(width, depth, fw, centre, bottom + fw / 2))
+    objs.append(place(width, depth, fw, centre, top - fw / 2))
+    objs.append(place(fw, depth, h, centre - width / 2 + fw / 2, (bottom + top) / 2))
+    objs.append(place(fw, depth, h, centre + width / 2 - fw / 2, (bottom + top) / 2))
+    nx, nz = panes
+    mw = 0.028
+    for i in range(1, nx):
+        a = centre - width / 2 + width * i / nx
+        objs.append(place(mw, depth * 0.8, h - 2 * fw, a, (bottom + top) / 2))
+    for j in range(1, nz):
+        z = bottom + h * j / nz
+        objs.append(place(width - 2 * fw, depth * 0.8, mw, centre, z))
+    # glass
+    if axis == "y":
+        g = box(f"{name}_glass", width - 2 * fw, 0.004, h - 2 * fw, (centre, plane, (bottom + top) / 2), glass_mat, col)
+    else:
+        g = box(f"{name}_glass", 0.004, width - 2 * fw, h - 2 * fw, (plane, centre, (bottom + top) / 2), glass_mat, col)
+    g.visible_shadow = False  # let sunlight through without needing caustics
+    objs.append(g)
+    if sill:
+        sd = wall_thickness / 2 + 0.06
+        if axis == "y":
+            objs.append(box(f"{name}_sill", width + 0.12, sd * 2, 0.035, (centre, plane + inward * sd * 0.6, bottom - 0.017),
+                            frame_mat, col, bevel=0.005))
+        else:
+            objs.append(box(f"{name}_sill", sd * 2, width + 0.12, 0.035, (plane + inward * sd * 0.6, centre, bottom - 0.017),
+                            frame_mat, col, bevel=0.005))
+    # light portal so the interior converges quickly
+    ld = bpy.data.lights.new(f"{name}_portal", "AREA")
+    ld.shape = "RECTANGLE"
+    ld.size = width
+    ld.size_y = h
+    ld.cycles.is_portal = True
+    portal = bpy.data.objects.new(f"{name}_portal", ld)
+    link(portal, col)
+    if axis == "y":
+        portal.location = (centre, plane + inward * 0.01, (bottom + top) / 2)
+        portal.rotation_euler = (math.radians(90) * (-inward), 0, 0) if inward > 0 else (math.radians(90), 0, 0)
+        # area lights emit along -Z: aim into the room
+        portal.rotation_euler = Vector((0, inward, 0)).to_track_quat("-Z", "Z").to_euler()
+    else:
+        portal.location = (plane + inward * 0.01, centre, (bottom + top) / 2)
+        portal.rotation_euler = Vector((inward, 0, 0)).to_track_quat("-Z", "Z").to_euler()
+    return objs
+
+
+def curtain(name, col, axis, plane, centre, width, bottom, top, inward, color="#d9cdb4", sheer=0.55, folds=9,
+            gather=0.6):
+    """Hanging fabric with folds (displaced grid). gather <1 bunches it."""
+    mat = M.fabric(f"{name}_linen", color, threads_per_m=1800, rough=0.9, sheen=0.5, translucent=sheer)
+    nx, nz = 80, 40
+    bm = bmesh.new()
+    verts = []
+    h = top - bottom
+    for j in range(nz + 1):
+        row = []
+        for i in range(nx + 1):
+            u, v = i / nx, j / nz
+            along = centre + (u - 0.5) * width * gather
+            amp = 0.035 * (1.0 + 0.6 * (1 - v))
+            off = math.sin(u * folds * 2 * math.pi + 0.7 * math.sin(v * 3.1)) * amp
+            z = bottom + v * h
+            if axis == "y":
+                row.append(bm.verts.new((along, plane + inward * (0.08 + off), z)))
+            else:
+                row.append(bm.verts.new((plane + inward * (0.08 + off), along, z)))
+        verts.append(row)
+    for j in range(nz):
+        for i in range(nx):
+            bm.faces.new((verts[j][i], verts[j][i + 1], verts[j + 1][i + 1], verts[j + 1][i]))
+    o = mesh_object(name, bm, col, smooth=True, mat=mat)
+    set_smooth(o)
+    sol = o.modifiers.new("Thick", "SOLIDIFY")
+    sol.thickness = 0.002
+    return o
+
+
+def outdoor_backdrop(col, centre: Vector, facing: Vector, rng: random.Random, distance=8.0, season="summer",
+                     trees: int = 14, hedge: bool = True):
+    """Garden beyond a window: lawn, hedge and trees. Usually seen heavily defocused."""
+    grass = bpy.data.materials.new("Lawn")
+    grass.use_nodes = True
+    b = grass.node_tree.nodes.get("Principled BSDF")
+    b.inputs["Base Color"].default_value = (0.06, 0.12, 0.03, 1.0) if season != "winter" else (0.7, 0.72, 0.75, 1.0)
+    b.inputs["Roughness"].default_value = 0.9
+    gp = box("Lawn", 60, 60, 0.1, (centre.x, centre.y, -0.6), grass, col)
+    leaf = bpy.data.materials.new("Foliage")
+    leaf.use_nodes = True
+    nt = leaf.node_tree
+    lb = nt.nodes.get("Principled BSDF")
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 25.0
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (0.02, 0.06, 0.015, 1)
+    ramp.color_ramp.elements[1].color = (0.18, 0.3, 0.06, 1)
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], lb.inputs["Base Color"])
+    lb.inputs["Subsurface Weight"].default_value = 0.3
+    lb.inputs["Roughness"].default_value = 0.6
+    side = facing.cross(Vector((0, 0, 1))).normalized()
+    for i in range(trees):
+        d = distance + rng.uniform(0, 14)
+        lat = rng.uniform(-12, 12)
+        p = centre + facing * d + side * lat
+        r = rng.uniform(1.4, 3.2)
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=4, radius=r, location=(p.x, p.y, r * 0.8 + rng.uniform(0, 2)))
+        t = bpy.context.object
+        t.name = f"Tree{i}"
+        for c in t.users_collection:
+            c.objects.unlink(t)
+        col.objects.link(t)
+        disp = t.modifiers.new("Leafy", "DISPLACE")
+        tex = bpy.data.textures.new(f"TreeTex{i}", "CLOUDS")
+        tex.noise_scale = 0.6
+        disp.texture = tex
+        disp.strength = r * 0.35
+        t.data.materials.append(leaf)
+        set_smooth(t)
+    if not hedge:
+        return gp
+    # hedge
+    hd = box("Hedge", 30, 1.2, 1.6, tuple(centre + facing * (distance * 0.55)) , leaf, col, bevel=0.3)
+    hd.location.z = 0.2
+    hd.rotation_euler = (0, 0, math.atan2(facing.y, facing.x) + math.pi / 2)
+    return gp
+
+
+# ---------------------------------------------------------------------------
+# Instant prints
+# ---------------------------------------------------------------------------
+
+def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: float = 18.0, lift=0.0005):
+    """Place a print. mode: leaning | flat. yaw rotates around Z (0 = facing -Y).
+    Returns (obj, picture_centre_world, normal_world)."""
+    obj = build_card(meta, name, col)
+    if mode == "flat":
+        obj.rotation_euler = Euler((math.radians(-90), 0, yaw), "XYZ")
+        obj.location = where + Vector((0, 0, lift + float(meta.get("thickness_mm", 1.0)) / 1000.0))
+        # card origin is the bottom edge; when flat it extends along +Y (rotated); centre it on `where`
+        w, h = card_size(meta)
+        shift = Matrix.Rotation(yaw, 3, "Z") @ Vector((0, -h / 2, 0))
+        obj.location += shift
+    else:
+        obj.rotation_euler = Euler((math.radians(-lean_deg), 0, yaw), "XYZ")
+        obj.location = where + Vector((0, 0, lift))
+    bpy.context.view_layer.update()
+    centre = obj.matrix_world @ image_centre_local(meta)
+    normal = (obj.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
+    return obj, centre, normal
+
+
+def scatter_prints(metas, col, centre: Vector, radius: float, rng: random.Random, base_z: float, prefix="Extra",
+                   avoid: Vector | None = None, avoid_r: float = 0.0, stack=False):
+    """Lay other prints around (or under) the hero."""
+    objs = []
+    z = base_z
+    for i, meta in enumerate(metas):
+        for _ in range(20):
+            if stack:
+                p = centre + Vector((rng.uniform(-radius, radius), rng.uniform(-radius, radius), 0))
+            else:
+                a = rng.uniform(0, 2 * math.pi)
+                d = rng.uniform(radius * 0.35, radius)
+                p = centre + Vector((math.cos(a) * d, math.sin(a) * d, 0))
+            if avoid is None or (p - avoid).length > avoid_r:
+                break
+        p.z = z
+        o, _, _ = place_card(meta, f"{prefix}{i}", col, p, rng.uniform(-math.pi, math.pi) if not stack else rng.uniform(-0.6, 0.6),
+                             "flat")
+        objs.append(o)
+        if stack:
+            z += float(meta.get("thickness_mm", 1.0)) / 1000.0 + 0.0003
+    return objs, z
+
+
+def aim_sun_through(window_info: dict, subject: Vector, target_elev_deg: float) -> tuple[float, float]:
+    """Choose a sun direction that passes through a window and lands on the subject, as close to the
+    requested elevation as the window allows. Returns (azimuth_deg_from, elevation_deg)."""
+    c = Vector(window_info["centre"])
+    bottom, top = window_info["bottom"], window_info["top"]
+    horiz = Vector((c.x - subject.x, c.y - subject.y, 0.0))
+    dist = horiz.length
+    want_z = subject.z + math.tan(math.radians(target_elev_deg)) * dist
+    z = max(bottom + 0.08, min(top - 0.08, want_z))
+    p = Vector((c.x, c.y, z))
+    d = (p - subject).normalized()
+    az = math.degrees(math.atan2(d.x, d.y)) % 360
+    el = math.degrees(math.asin(max(-1, min(1, d.z))))
+    return az, el

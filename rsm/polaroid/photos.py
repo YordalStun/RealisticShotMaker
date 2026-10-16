@@ -259,9 +259,15 @@ def lake(w: int, h: int, seed: int) -> np.ndarray:
 
 BUILTIN = {"beach": beach, "garden": garden, "sunset": sunset, "birthday": birthday, "snow": snow, "lake": lake}
 
+# real photographs shipped with the app (CC0, see assets/photos/LICENSE.txt)
+PHOTO_DIR = Path(__file__).resolve().parent.parent / "assets" / "photos"
+REAL_PHOTOS = {"cat": "cat.png", "coffee": "coffee.png"}
+
 
 def get_photo(source: str, w: int, h: int, zoom=1.0, ox=0.0, oy=0.0, seed: int = 1) -> np.ndarray:
     """Return the photo for a polaroid as sRGB float RGB at w×h."""
+    if source.startswith("builtin:") and source.split(":", 1)[1] in REAL_PHOTOS:
+        return load_user_photo(PHOTO_DIR / REAL_PHOTOS[source.split(":", 1)[1]], w, h, zoom, ox, oy)
     if source.startswith("builtin:"):
         key = source.split(":", 1)[1]
         fn = BUILTIN.get(key, beach)
