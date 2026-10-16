@@ -27,7 +27,8 @@ def _shoebox(col, at: Vector, rot_z: float, size=(0.33, 0.21, 0.12)):
     """An open cardboard shoebox (walls with real thickness) and its lid, knocked askew beside it."""
     sx, sy, sz = size
     card = M.paper("ShoeboxCard", "#b98f5f", rough=0.8, age=0.6)
-    label = M.paper("ShoeboxLabel", "#e9e0cc", rough=0.7, age=0.5, ink_lines=True, line_color="#2a2a40")
+    label = M.paper("ShoeboxLabel", "#ece3cc", rough=0.7, age=0.5)
+    stripe = M.paper("ShoeboxStripe", "#8c2f2f", rough=0.6, age=0.4)
     root = bpy.data.objects.new("Shoebox", None)
     link(root, col)
     root.location = at
@@ -45,12 +46,14 @@ def _shoebox(col, at: Vector, rot_z: float, size=(0.33, 0.21, 0.12)):
         o.parent = root
     lab = box("ShoeboxLabel", 0.1, 0.0008, 0.05, (0.06, -sy / 2 - 0.0004, sz * 0.55), label, col)
     lab.parent = root
-    # the lid: lying upside-down, leaning on the box's side
+    for dz in (-0.017, 0.017):  # the printed band across the label
+        band = box("ShoeboxLabelBand", 0.1, 0.0004, 0.004, (0.06, -sy / 2 - 0.0009, sz * 0.55 + dz), stripe, col)
+        band.parent = root
+    # the lid was tossed onto the sofa behind (a soft shape in the background)
     lid = bpy.data.objects.new("ShoeboxLid", None)
     link(lid, col)
-    lid.parent = root
-    lid.location = (sx / 2 + 0.13, 0.03, 0.0)
-    lid.rotation_euler = (0, math.radians(-8), math.radians(14))
+    lid.location = (0.45, 1.2, 0.412)
+    lid.rotation_euler = (math.radians(-3), math.radians(4), math.radians(23))
     lsx, lsy, lsz = sx + 0.008, sy + 0.008, 0.035
     for nm, dims, loc in [("Top", (lsx, lsy, t), (0, 0, lsz - t / 2)), ("F", (lsx, t, lsz), (0, -lsy / 2, lsz / 2)),
                           ("B", (lsx, t, lsz), (0, lsy / 2, lsz / 2)), ("L", (t, lsy, lsz), (-lsx / 2, 0, lsz / 2)),
@@ -281,7 +284,7 @@ def build(ctx: Ctx):
         pen = P.pencil("SpreadPencil", col, rng=rng)
         pen.location = (0.4, 0.04, surf + 0.0038)
         pen.rotation_euler = (0, math.radians(90), math.radians(rng.uniform(60, 120)))
-        P.envelope("SpreadEnvelope", col, (0.42, 0.25, surf), math.radians(rng.uniform(-20, 20)))
+        P.envelope("SpreadEnvelope", col, (0.47, -0.02, surf), math.radians(rng.uniform(-20, 20)))
 
     view = Vector((0.15, -1.0, 0.0)).normalized()
     vd = Vector((view.x * math.cos(math.radians(el)), view.y * math.cos(math.radians(el)), math.sin(math.radians(el))))

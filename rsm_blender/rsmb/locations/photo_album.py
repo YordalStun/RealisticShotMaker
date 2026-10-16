@@ -38,7 +38,7 @@ def _page_block(name, col, x0: float, x1: float, y0: float, y1: float, z: float,
         for i in range(nx + 1):
             x = x0 + (x1 - x0) * i / nx
             d = abs(x - gutter_x)
-            h = thick * (1 - math.exp(-d / 0.022))  # dips into the gutter
+            h = thick * (1 - math.exp(-d / 0.012))  # dips into the gutter, flat a few cm out
             h += 0.0012 * math.sin(min(1.0, d / 0.3) * math.pi) * 0.3  # the faintest lift across the page
             trow.append(bm.verts.new((x, y, z + max(0.0008, h))))
             brow.append(bm.verts.new((x, y, z)))
@@ -108,7 +108,7 @@ def _mount(ctx, col, meta, name, centre: Vector, yaw: float, corner_mat, caption
     if caption and font is not None:
         under = centre + rot @ Vector((0, -h / 2 - 0.013, 0))
         z = surface_z(under.x, under.y, z_hint + 0.02) or z_hint
-        text_obj(col, caption, font, 0.0105, (under.x, under.y, z + 0.0001), (0, 0, yaw + ctx.rng.uniform(-0.03, 0.03)),
+        text_obj(col, caption, font, 0.0105, (under.x, under.y, z + 0.0004), (0, 0, yaw + ctx.rng.uniform(-0.03, 0.03)),
                  ink, name=f"{name}Caption")
     return obj, c, n
 
@@ -218,7 +218,7 @@ def build(ctx: Ctx):
     meta = ctx.job["polaroid"]
     extras = list(ctx.job.get("extra_prints", []))
     card_h = meta["card_mm"][1] / 1000.0
-    placement = s.get("placement", "mounted")
+    placement = "flat" if s.get("placement") == "flat" else "mounted"
     caps = CAPTIONS[:]
     rng.shuffle(caps)
     hero_caption = (ctx.spec.get("polaroid", {}).get("caption") or "").strip() or caps.pop()
