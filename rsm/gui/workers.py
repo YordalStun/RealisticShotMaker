@@ -72,6 +72,18 @@ class RenderJob(QObject):
                 self.finished.emit(False, "Cancelled")
                 return
             extra = []
+            if self.mode == "regrade":
+                # new look on already-rendered HDR frames: rewrite the film lab settings, re-develop, re-encode
+                import json
+                from ..job import film_params
+                job = json.loads(Path(self.job_path).read_text(encoding="utf-8"))
+                job["filmlab"] = film_params(self.spec)
+                job["spec"]["look"] = self.spec.to_dict()["look"]
+                frames = Path(job["paths"]["frames"])
+                for f in frames.glob("frame_*.png"):
+                    f.unlink()
+                Path(self.job_path).write_text(json.dumps(job, indent=2), encoding="utf-8")
+                extra = ["--regrade"]
             if self.mode == "still":
                 out = str(Path(self.job_path).parent / "work" / "preview")
                 extra = ["--still", f"{self.still_at:.4f}", "--still-out", out]

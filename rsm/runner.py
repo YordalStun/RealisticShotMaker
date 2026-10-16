@@ -130,6 +130,15 @@ class RenderProcess:
                 if recent:
                     avg = sum(recent) / len(recent)
                     p.eta = avg * (p.total - p.done)
+            elif kind == "frame_developed":
+                p.stage = "developing"
+                p.done = ev["index"] + 1
+                p.total = ev["total"]
+                p.last_frame_path = ev.get("path", "")
+                p.message = f"Developing frame {p.done} of {p.total}"
+            elif kind == "done":
+                p.stage = "rendered"
+                p.message = "Frames developed"
             elif kind == "still_done":
                 p.stage = "done"
                 p.last_frame_path = ev["path"]

@@ -39,6 +39,8 @@ def parse_args():
     ap.add_argument("--regrade", action="store_true", help="re-run the film lab on existing EXR frames")
     ap.add_argument("--save-blend", default=None)
     ap.add_argument("--frames", default=None, help="comma separated frame numbers to render")
+    ap.add_argument("--crop", default=None, help="x0,y0,x1,y1 fractions: render only this window of the frame "
+                    "(full-resolution detail check)")
     return ap.parse_args(argv)
 
 
@@ -62,6 +64,7 @@ def build_scene(job: dict):
     built = mod.build(ctx)
     anchors: camera_rig.Anchors = built["anchors"]
     room = built["room"]
+    anchors.extra = dict(anchors.extra or {}, room=(tuple(room.min), tuple(room.max)))
 
     # ---- sky and sun
     tp = world.TIME_PRESETS.get(tod, world.TIME_PRESETS["golden"])
@@ -168,6 +171,13 @@ def main():
     if args.still is not None:
         f = fs + int(round(args.still * (fe - fs)))
         scene.frame_set(f)
+        if args.crop:
+            x0, y0, x1, y1 = (float(v) for v in args.crop.split(","))
+            scene.render.use_border = True
+            scene.render.use_crop_to_border = True
+            # Blender's border origin is bottom-left
+            scene.render.border_min_x, scene.render.border_max_x = x0, x1
+            scene.render.border_min_y, scene.render.border_max_y = 1 - y1, 1 - y0
         exr = args.still_out + ".exr" if args.still_out else os.path.join(job["paths"]["work"], "still.exr")
         scene.render.filepath = exr
         bpy.ops.render.render(write_still=True)

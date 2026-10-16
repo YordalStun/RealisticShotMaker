@@ -7,10 +7,17 @@ Cycles renderer and rendered out to 4K or 8K video.
 
 ## What you get
 
-- **Five fully built sets**: study desk by the window, kitchen table in the
-  morning, attic memory trunk, bedside table at night, living-room mantelpiece.
-  Each one is a complete room with props, windows, a garden or street outside
-  and proper light coming in.
+- **Six fully built sets**: study desk by the window, kitchen table in the
+  morning, attic memory trunk, bedside table at night, living-room mantelpiece,
+  and an investigation board (a see-through glass board covered in photos,
+  notes and string, in a detective's office seen through the glass). Each one is
+  a complete room with props, windows, a garden or street outside and proper
+  light coming in.
+- **Options per set**: for example string between photos, office lights,
+  spotlight on the photo and glass or cork board on the investigation board;
+  breakfast mess, flowers and the hanging lamp in the kitchen; fire state,
+  candles and Christmas decorations on the mantelpiece; cobwebs and trunk
+  contents in the attic.
 - **Instant prints you control**: Polaroid 600, SX-70, Spectra, Go, Instax
   Mini/Square/Wide. Use your own photo, write a caption in one of six
   handwriting styles, and set how damaged it is: age, fading, colour shift,
@@ -18,9 +25,10 @@ Cycles renderer and rendered out to 4K or 8K video.
   dust, worn corners, coffee and water stains, creases, a folded corner, curl,
   old sticky tape, a pin hole. Creases, curl and folded corners are real
   geometry, not just pictures.
-- **15 camera moves**: push-in, pull-out, slides, arcs, tilt-down reveal, rack
-  focus in and out, crane down, top-down turn, drift, pan across, handheld and
-  locked-off. Moves are eased like a real dolly, with optional slider wobble,
+- **16 camera moves**: push-in, pull-out, slides, arcs, tilt-down reveal, rack
+  focus in and out, crane down, top-down turn, drift, pan across, handheld,
+  locked-off, and *extreme close-up then cut wider* (opens deep inside the
+  picture, then hard-cuts to the photo in its setting). Moves are eased like a real dolly, with optional slider wobble,
   handheld sway and a human focus puller who lags and overshoots slightly.
 - **A ray-traced lens model**: every camera ray goes through a lens with
   aperture blades, cat's-eye bokeh at the edges, swirl, spherical aberration
@@ -66,6 +74,13 @@ why 4.5 LTS is the minimum.
 Renders are saved under `Videos\RealisticShotMaker\<name>_<date>` unless you
 choose another folder: the video, the developed frames, the HDR frames and a
 copy of the shot settings (`shot.rsm.json`).
+
+## Photo resolution
+
+Close-ups enlarge your photo a lot. For the *extreme close-up* shot at 4K the
+picture needs several thousand pixels to stay sharp; the app warns you when a
+photo is too small for the size and framing you picked (it will still render,
+just softer, like an enlarged print).
 
 ## How long renders take
 

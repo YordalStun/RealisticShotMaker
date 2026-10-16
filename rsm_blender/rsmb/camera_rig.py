@@ -287,7 +287,7 @@ def _clear_view(p: Pose, anchors: Anchors) -> bool:
     """True if the straight line from the camera to the subject is unobstructed."""
     scene = bpy.context.scene
     dg = bpy.context.evaluated_depsgraph_get()
-    eye = p.eye.copy()
+    eye = _inside_room(p.eye.copy(), p.target, anchors)
     if anchors.min_height is not None and eye.z < anchors.min_height:
         eye.z = anchors.min_height
     target = anchors.subject
@@ -310,6 +310,27 @@ def _clear_view(p: Pose, anchors: Anchors) -> bool:
             continue
         return False
     return True
+
+
+def _inside_room(eye: Vector, target: Vector, anchors: Anchors, margin: float = 0.25) -> Vector:
+    """Walls are real: if a framing would put the camera through a wall, stop just inside it."""
+    room = anchors.extra.get("room") if anchors.extra else None
+    if not room:
+        return eye
+    mn, mx = Vector(room[0]), Vector(room[1])
+    lo, hi = mn + Vector((margin, margin, margin)), mx - Vector((margin, margin, margin))
+    if all(lo[i] <= eye[i] <= hi[i] for i in range(3)):
+        return eye
+    d = eye - target
+    t_max = 1.0
+    for i in range(3):
+        if abs(d[i]) < 1e-9:
+            continue
+        for bound in (lo[i], hi[i]):
+            t = (bound - target[i]) / d[i]
+            if 0 < t < t_max:
+                t_max = t
+    return target + d * max(0.05, t_max)
 
 
 def macro_move(a: Anchors, D_macro: float):
@@ -342,8 +363,19 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
     sensor_w, _ = sensor
     sensor_h_eff = sensor_w / aspect
     D = framing_distance(anchors.card_height, fill, focal, sensor_h_eff)
+    # square up to the print like a DP shooting an insert: look at its face, not at its edge, so the whole
+    # print lies in the (very thin, at 4K) plane of focus. Flat prints keep the set's own viewpoint.
+    view0 = anchors.view_dir.normalized()
+    nrm = anchors.card_normal.normalized()
+    if nrm.z < 0.6:
+        old_dot = max(0.35, abs(nrm.dot(view0)))
+        view0 = (view0 * 0.2 + nrm * 0.8).normalized()
+        # the print now faces the lens more squarely, so it looks taller: frame for that
+        anchors = Anchors(**{**anchors.__dict__,
+                             "card_height": anchors.card_height * max(0.35, abs(nrm.dot(view0))) / old_dot})
+        D = framing_distance(anchors.card_height, fill, focal, sensor_h_eff)
     # user adjustments of the default viewpoint
-    base = rot_z(anchors.view_dir, math.radians(float(cam_spec.get("angle", 0.0))))
+    base = rot_z(view0, math.radians(float(cam_spec.get("angle", 0.0))))
     base = elevate(base, float(cam_spec.get("height", 0.0)) * 25.0)
     move = cam_spec["move"]
     amount = float(cam_spec.get("move_amount", 1.0))
@@ -389,7 +421,7 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         cut_frame = frame_start + int(math.ceil(cut_t * (n - 1)))
 
     def solve(p: Pose, time_s: float, prev_q):
-        eye = p.eye.copy()
+        eye = _inside_room(p.eye.copy(), p.target, anchors)
         if anchors.min_height is not None and eye.z < anchors.min_height:
             eye.z = anchors.min_height
         off, (pitch, yaw, roll) = shake.sample(time_s, handheld, wobble)

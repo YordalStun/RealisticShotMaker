@@ -35,6 +35,14 @@ PRESETS = {
     "Late night letter": dict(scene=dict(location="bedside_night", time_of_day="night", light_shafts=0.1, dust=0.2),
                               camera=dict(move="rack_in", lens="vintage_prime", body="film_35", fstop=1.4),
                               look=dict(grade="golden_memory")),
+    "Cold case board": dict(scene=dict(location="investigation_board", time_of_day="night", placement="pinned",
+                                       light_shafts=0.5, dust=0.4),
+                            camera=dict(move="pan_across", lens="anamorphic", body="digital_cinema", fstop=2.0),
+                            look=dict(grade="bleach_bypass")),
+    "Memory close-up cut": dict(scene=dict(location="study_desk", time_of_day="golden"),
+                                camera=dict(move="macro_cut", cut_at=0.4, cut_to="push_in", lens="vintage_prime",
+                                            body="film_35", fstop=2.8),
+                                look=dict(grade="warm_nostalgia")),
     "Home movie": dict(scene=dict(location="mantelpiece", time_of_day="evening"),
                        camera=dict(move="handheld", lens="vintage_prime", body="super8", fstop=2.8),
                        look=dict(grade="faded_film")),
@@ -146,9 +154,12 @@ class MainWindow(QMainWindow):
         self.time_slider.valueChanged.connect(self._time_changed)
         self.preview_btn = QPushButton("Preview frame")
         self.preview_btn.clicked.connect(self.preview_frame)
+        self.draft_btn = QPushButton("Draft video")
+        self.draft_btn.setToolTip("A fast, low-resolution render of the whole move to check timing and framing.")
+        self.draft_btn.clicked.connect(lambda: self.queue_render(draft=True))
         self.render_btn = QPushButton("Render video")
         self.render_btn.setObjectName("Primary")
-        self.render_btn.clicked.connect(self.queue_render)
+        self.render_btn.clicked.connect(lambda: self.queue_render())
         self.estimate_label = QLabel("")
         self.estimate_label.setObjectName("Caption")
         ctrl = QHBoxLayout()
@@ -157,6 +168,7 @@ class MainWindow(QMainWindow):
         ctrl.addWidget(self.time_label)
         ctrl.addSpacing(12)
         ctrl.addWidget(self.preview_btn)
+        ctrl.addWidget(self.draft_btn)
         ctrl.addWidget(self.render_btn)
 
         # queue
@@ -174,9 +186,13 @@ class MainWindow(QMainWindow):
         self.cancel_btn.clicked.connect(self.cancel_selected)
         self.open_btn = QPushButton("Open output folder")
         self.open_btn.clicked.connect(self.open_selected)
+        self.regrade_btn = QPushButton("Regrade selected")
+        self.regrade_btn.setToolTip("Apply the current Look settings to a finished render without re-rendering it.")
+        self.regrade_btn.clicked.connect(self.regrade_selected)
         qbtns.addWidget(QLabel("Render queue"))
         qbtns.addStretch(1)
         qbtns.addWidget(self.cancel_btn)
+        qbtns.addWidget(self.regrade_btn)
         qbtns.addWidget(self.open_btn)
 
         right = QWidget()
@@ -377,6 +393,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("output_dir", value)
         if f.path.startswith("polaroid."):
             self._schedule_polaroid_preview()
+        self.estimate_label.setWordWrap(True)
         self._update_estimate()
 
     def _update_estimate(self):
@@ -390,10 +407,42 @@ class MainWindow(QMainWindow):
         # rough guide for an RTX 4080/5080 class card with this kind of interior scene
         sec_per_frame = mpix * samples / 1024 * 9.0 * (1.6 if self.spec.scene.light_shafts > 0.05 else 1.0)
         total = sec_per_frame * frames
-        self.estimate_label.setText(
-            f"{frames} frames at {res[1]}×{res[2]}, {samples} samples per pixel. "
-            f"Rough estimate on a high-end graphics card: about {fmt_time(sec_per_frame)} per frame, "
-            f"{fmt_time(total)} in total.")
+        text = (f"{frames} frames at {res[1]}×{res[2]}, {samples} samples per pixel. "
+                f"Rough estimate on a high-end graphics card: about {fmt_time(sec_per_frame)} per frame, "
+                f"{fmt_time(total)} in total.")
+        warn = self._photo_resolution_warning(res[2])
+        if warn:
+            text += "\n⚠ " + warn
+        self.estimate_label.setText(text)
+
+    def _photo_resolution_warning(self, out_h: int) -> str:
+        """Tell the user when their photo is too small to stay sharp at the chosen size and framing."""
+        src = self.spec.polaroid.photo
+        try:
+            from PIL import Image
+            from ..polaroid.photos import PHOTO_DIR, REAL_PHOTOS
+            if src.startswith("builtin:"):
+                key = src.split(":", 1)[1]
+                if key not in REAL_PHOTOS:
+                    return ""
+                path = PHOTO_DIR / REAL_PHOTOS[key]
+            else:
+                path = Path(src)
+            if not path.exists():
+                return f"The photo {path.name} can't be found."
+            with Image.open(path) as im:
+                ph = min(im.size)
+        except Exception:
+            return ""
+        film = catalog.FILM_TYPES.get(self.spec.polaroid.film, catalog.FILM_TYPES["600"])
+        fill = catalog.FRAMINGS.get(self.spec.camera.framing, ("", 0.62))[1]
+        if self.spec.camera.move == "macro_cut":
+            fill = max(fill, self.spec.camera.macro_fill)
+        need = int(out_h * fill * film.image_mm[1] / film.card_mm[1] * self.spec.polaroid.photo_zoom)
+        if ph < need * 0.5:
+            return (f"Your photo is {ph} px on its short side; this framing at this resolution needs about "
+                    f"{need} px to look sharp. It will look soft, like an enlarged print.")
+        return ""
 
     # ------------------------------------------------------------------ polaroid preview
     def _schedule_polaroid_preview(self):
@@ -508,13 +557,20 @@ class MainWindow(QMainWindow):
     def _work_root(self) -> str:
         return self.spec.output.output_dir or str(Path.home() / "Videos" / "RealisticShotMaker")
 
-    def queue_render(self):
+    def queue_render(self, draft: bool = False):
         if not self._need_blender():
             return
-        job = RenderJob(self.spec, self.blender, "video")
+        spec = self.spec.copy()
+        if draft:
+            spec.output.resolution = "preview"
+            spec.output.quality = "draft"
+            spec.output.custom_samples = 0
+            spec.output.codec = "h264"
+            spec.output.name = f"{spec.output.name}_draft"
+        job = RenderJob(spec, self.blender, "video")
         row = self.table.rowCount()
         self.table.insertRow(row)
-        name = f"{self.spec.output.name} · {catalog.option_name(catalog.LOCATIONS, self.spec.scene.location)}"
+        name = f"{spec.output.name} · {catalog.option_name(catalog.LOCATIONS, spec.scene.location)}"
         self.table.setItem(row, 0, QTableWidgetItem(name))
         self.table.setItem(row, 1, QTableWidgetItem("Waiting"))
         bar = QProgressBar()
@@ -575,6 +631,32 @@ class MainWindow(QMainWindow):
                 self.table.item(job.row, 1).setText("Cancelled")
             else:
                 job.cancel()
+
+    def regrade_selected(self):
+        src = self._selected_job()
+        if not src or getattr(src, "state", "") != "done" or not src.job_path:
+            QMessageBox.information(self, "Regrade", "Select a finished render in the queue first.")
+            return
+        if not src.spec.output.keep_frames:
+            QMessageBox.information(self, "Regrade", "That render didn't keep its HDR frames, so it can't be regraded.")
+            return
+        spec = src.spec.copy()
+        spec.look = self.spec.copy().look
+        job = RenderJob(spec, self.blender, "regrade", job_path=src.job_path)
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setItem(row, 0, QTableWidgetItem(f"{spec.output.name} · regrade"))
+        self.table.setItem(row, 1, QTableWidgetItem("Waiting"))
+        bar = QProgressBar()
+        bar.setRange(0, 1000)
+        self.table.setCellWidget(row, 2, bar)
+        self.table.setItem(row, 3, QTableWidgetItem("–"))
+        self.table.setItem(row, 4, QTableWidgetItem(""))
+        job.row = row
+        job.updated.connect(lambda p, job=job: self._job_update(job, p))
+        job.finished.connect(lambda ok, msg, job=job: self._job_finished(job, ok, msg))
+        self.queue.append(job)
+        self._pump()
 
     def open_selected(self):
         job = self._selected_job()
