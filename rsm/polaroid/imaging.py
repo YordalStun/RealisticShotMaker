@@ -195,6 +195,6 @@ def save_rgb(path, rgb: np.ndarray, alpha: np.ndarray | None = None):
 
 def save_gray(path, a: np.ndarray, sixteen: bool = False):
     if sixteen:
-        Image.fromarray(to_u16(a), "I;16").save(path, compress_level=1)
+        Image.fromarray(to_u16(a)).save(path, compress_level=1)  # uint16 -> 16-bit greyscale PNG
     else:
         Image.fromarray(to_u8(a), "L").save(path, compress_level=1)

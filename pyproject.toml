@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realisticshotmaker"
+version = "0.1.0"
+description = "Cinematic documentary insert shots of instant photos, path traced with Blender Cycles."
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "Pillow>=10.0", "PySide6>=6.6", "imageio-ffmpeg>=0.5"]
+
+[project.gui-scripts]
+realisticshotmaker = "rsm.gui.app:main"
+
+[project.scripts]
+rsm = "rsm.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rsm*"]
+
+[tool.setuptools.package-data]
+rsm = ["assets/fonts/*", "assets/photos/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

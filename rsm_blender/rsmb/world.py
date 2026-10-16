@@ -10,9 +10,9 @@ from .util import Nodes, link, new_material, srgb
 
 # time of day → sun elevation (deg), colour temperature (K), sky strength, sun strength, exposure (stops)
 TIME_PRESETS = {
-    "morning": dict(elev=16.0, kelvin=4600.0, sky=0.35, sun=5.0, exposure=0.0),
+    "morning": dict(elev=16.0, kelvin=4600.0, sky=0.3, sun=7.0, exposure=0.0),
     "midday": dict(elev=52.0, kelvin=5600.0, sky=0.5, sun=6.0, exposure=-0.6),
-    "golden": dict(elev=6.5, kelvin=3300.0, sky=0.22, sun=4.5, exposure=0.3),
+    "golden": dict(elev=6.5, kelvin=3300.0, sky=0.16, sun=6.5, exposure=0.3),
     "evening": dict(elev=-2.0, kelvin=3000.0, sky=0.06, sun=0.0, exposure=1.2),
     "night": dict(elev=-25.0, kelvin=4100.0, sky=0.0, sun=0.0, exposure=1.8),
 }

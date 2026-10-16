@@ -111,13 +111,16 @@ def wood(name="Wood", preset="oak", varnish=0.6, wear=0.3, dust=0.0, scale=1.0, 
         jump = n.vmath("MULTIPLY", plank_rand, (37.3, 11.7, 23.1))
         base = n.vmath("ADD", base, jump)
     # large-scale warp so growth rings meander
-    warp_n = n.new("ShaderNodeTexNoise", Scale=0.9, Detail=5.0, Roughness=0.5)
+    warp_n = n.new("ShaderNodeTexNoise", Scale=1.1, Detail=5.0, Roughness=0.55)
     n.link(base, None, warp_n, "Vector")
-    warped = n.mix("VECTOR", 0.06 * p["figure"] + 0.02, base, (warp_n, "Color"))
-    # stretch along the grain
-    stretch = n.vmath("MULTIPLY", warped, (0.08, 1.0, 1.0))
-    rings = n.new("ShaderNodeTexWave", _wave_type="BANDS", _bands_direction="Y", _wave_profile="SAW",
-                  Scale=p["ring"] * 3.0, Distortion=2.0 + 4 * p["figure"], Detail=5.0)
+    warp = n.vmath("MULTIPLY", n.vmath("SUBTRACT", (warp_n, "Color"), (0.5, 0.5, 0.5)),
+                   (0.0, 0.035 * (0.4 + p["figure"]), 0.035 * (0.4 + p["figure"])))
+    # the board is a slice through a log whose axis runs along X, offset so the heart isn't visible:
+    # rings become long arches ("cathedrals") instead of parallel stripes
+    log_axis = n.vmath("ADD", n.vmath("ADD", base, warp), (0.0, 0.31, 0.17))
+    stretch = n.vmath("MULTIPLY", log_axis, (0.045, 1.0, 1.0))
+    rings = n.new("ShaderNodeTexWave", _wave_type="RINGS", _rings_direction="SPHERICAL", _wave_profile="SAW",
+                  Scale=p["ring"] * 2.2, Distortion=1.5 + 2.5 * p["figure"], Detail=4.0)
     rings.inputs["Detail Scale"].default_value = 1.4
     rings.inputs["Detail Roughness"].default_value = 0.6
     n.link(stretch, None, rings, "Vector")

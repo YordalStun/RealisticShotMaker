@@ -25,7 +25,9 @@ def load_user_photo(path: str | Path, w: int, h: int, zoom: float = 1.0, ox: flo
     cw, ch = w / scale, h / scale  # crop size in source pixels
     cx = iw / 2 + ox * (iw - cw) / 2
     cy = ih / 2 + oy * (ih - ch) / 2
-    box = (cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2)
+    x0 = min(max(0.0, cx - cw / 2), iw - cw)
+    y0 = min(max(0.0, cy - ch / 2), ih - ch)
+    box = (max(0.0, x0), max(0.0, y0), min(float(iw), x0 + cw), min(float(ih), y0 + ch))
     im = im.resize((w, h), Image.LANCZOS, box=box)
     return np.asarray(im, dtype=np.float32) / 255.0
 

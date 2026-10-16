@@ -229,19 +229,20 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
         idx = ((theta + math.pi) / (2 * math.pi) * 63).astype(int)
         Rt = R * (1 + (wob[idx] - 0.5) * 0.35 + (fbm(W, H, 3 * mm, r, 3) - 0.5) * 0.08)
         if i % 2 == 0:  # coffee ring
-            ring = np.exp(-((rad - Rt) / (0.45 * mm)) ** 2)
-            inside = smoothstep(Rt, Rt - 2 * mm, rad) * 0.25
+            width_var = 0.35 + 0.5 * fbm(W, H, 2 * mm, r, 3)
+            ring = np.exp(-((rad - Rt) / (width_var * mm)) ** 2) * (0.55 + 0.45 * fbm(W, H, 4 * mm, r, 3))
+            inside = smoothstep(Rt, Rt - 3 * mm, rad) * 0.18
             s = p.stains
             stain_col = np.array([0.80, 0.63, 0.42], np.float32)
-            color = lerp(color, color * stain_col, ((ring * 0.85 + inside) * s)[..., None])
+            color = lerp(color, color * stain_col, ((ring * 0.6 + inside) * s)[..., None])
             rough += ring * 0.15 * s
         else:  # dried water mark: tide line, washed emulsion, cockled surface
             m = smoothstep(Rt, Rt - 1.5 * mm, rad)
-            tide = np.exp(-((rad - Rt) / (0.3 * mm)) ** 2)
+            tide = np.exp(-((rad - Rt) / ((0.25 + 0.45 * fbm(W, H, 2 * mm, r, 3)) * mm)) ** 2) * (0.4 + 0.6 * fbm(W, H, 5 * mm, r, 3))
             s = p.stains
             washed = lerp(color, color * 0.75 + np.array([0.18, 0.22, 0.2], np.float32), 0.6)
             color = lerp(color, washed, (m * img_mask * 0.55 * s)[..., None])
-            color = lerp(color, color * np.array([0.78, 0.72, 0.62], np.float32), (tide * 0.7 * s)[..., None])
+            color = lerp(color, color * np.array([0.82, 0.76, 0.66], np.float32), (tide * 0.45 * s)[..., None])
             cockle = (fbm(W, H, 1.5 * mm, r, 3) - 0.5) * m
             height += cockle * 0.08 * s
             rough += m * 0.18 * s * img_mask
@@ -335,7 +336,7 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
     wear = float(np.clip(p.corner_wear, 0, 1))
     radius = (0.9 + 2.6 * wear) * mm
     sdf = rounded_rect_sdf(W, H, 0, 0, W, H, radius)
-    frayed = sdf + (fbm(W, H, 0.6 * mm, r, 4) - 0.5) * (0.15 + 0.6 * wear) * mm
+    frayed = sdf + (fbm(W, H, 1.6 * mm, r, 3) - 0.5) * (0.08 + 0.35 * wear) * mm
     alpha = np.clip(0.5 - frayed, 0, 1)
     edge_band = smoothstep(0.7 * mm * (0.3 + wear), 0, -frayed) * alpha
     edge_col = np.array([0.93, 0.91, 0.87], np.float32) if dark_frame else np.array([0.80, 0.77, 0.70], np.float32)
@@ -390,7 +391,7 @@ def preview_image(p: PolaroidSpec, height_px: int = 640):
     """Quick composited preview (PIL RGBA image) for the GUI."""
     from PIL import Image
     ft = catalog.FILM_TYPES.get(p.film, catalog.FILM_TYPES["600"])
-    ppm = max(3.0, height_px / ft.card_mm[1])
+    ppm = max(1.5, height_px / ft.card_mm[1])
     maps = generate(p, ppm)
     rgb = (np.clip(maps.color, 0, 1) * 255).astype(np.uint8)
     a = (np.clip(maps.alpha, 0, 1) * 255).astype(np.uint8)

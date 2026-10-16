@@ -270,12 +270,73 @@ def aim_sun_through(window_info: dict, subject: Vector, target_elev_deg: float) 
     requested elevation as the window allows. Returns (azimuth_deg_from, elevation_deg)."""
     c = Vector(window_info["centre"])
     bottom, top = window_info["bottom"], window_info["top"]
+    # aim through the middle of a pane, never through a glazing bar
+    along = window_info.get("along")
+    panes = int(window_info.get("panes", 2))
+    if along is not None and panes % 2 == 0:
+        c = c + Vector(along).normalized() * (window_info.get("width", 1.0) / (2 * panes))
+    elif panes % 2 == 1:
+        pass  # odd pane count: the centre is already mid-pane
+    # avoid horizontal bars too: aim at the middle of a pane row
     horiz = Vector((c.x - subject.x, c.y - subject.y, 0.0))
     dist = horiz.length
     want_z = subject.z + math.tan(math.radians(target_elev_deg)) * dist
-    z = max(bottom + 0.08, min(top - 0.08, want_z))
+    rows = int(window_info.get("rows", 1))
+    if rows > 1:
+        row_h = (top - bottom) / rows
+        centres = [bottom + row_h * (i + 0.5) for i in range(rows)]
+        z = min(centres, key=lambda zc: abs(zc - want_z))
+        # stay inside that row but as close to the wanted height as possible
+        z = max(z - row_h * 0.3, min(z + row_h * 0.3, want_z))
+    else:
+        z = max(bottom + 0.08, min(top - 0.08, want_z))
     p = Vector((c.x, c.y, z))
     d = (p - subject).normalized()
     az = math.degrees(math.atan2(d.x, d.y)) % 360
     el = math.degrees(math.asin(max(-1, min(1, d.z))))
     return az, el
+
+
+def animate_flicker(light_obj, base_energy: float, amount: float, fps: float, frame_start: int, frame_end: int,
+                    seed: int = 1, speed: float = 1.0):
+    """Keyframe a light's energy with layered noise: candles, fires, old bulbs."""
+    from ..camera_rig import Noise1D
+    n1, n2, n3 = Noise1D(seed), Noise1D(seed + 1), Noise1D(seed + 2)
+    ld = light_obj.data
+    for f in range(frame_start, frame_end + 1):
+        t = (f - frame_start) / fps * speed
+        v = 1.0 + amount * (0.55 * n1(t * 1.3) + 0.3 * n2(t * 4.7) + 0.15 * n3(t * 11.0))
+        ld.energy = max(0.0, base_energy * v)
+        ld.keyframe_insert("energy", frame=f)
+
+
+def wallpaper(name="Wallpaper", base="#c9b99a", ink="#a8936e", stripe_scale=9.0):
+    """Faded striped wallpaper with a small repeating motif."""
+    from ..util import Nodes, new_material, srgb
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+    mp = n.new("ShaderNodeMapping")
+    n.link(tc, "Object", mp, "Vector")
+    stripes = n.new("ShaderNodeTexWave", _wave_type="BANDS", _bands_direction="X", Scale=stripe_scale,
+                    Distortion=0.0)
+    n.link(mp, None, stripes, "Vector")
+    st = n.ramp((stripes, "Fac"), [(0.0, (0, 0, 0)), (0.45, (0, 0, 0)), (0.5, (1, 1, 1)), (0.6, (0, 0, 0))])
+    motif = n.new("ShaderNodeTexVoronoi", Scale=34.0, _feature="F1")
+    n.link(mp, None, motif, "Vector")
+    dots = n.ramp((motif, "Distance"), [(0.0, (1, 1, 1)), (0.18, (0, 0, 0))])
+    pat = n.math("MAXIMUM", (st, "Color"), n.math("MULTIPLY", (dots, "Color"), 0.8))
+    age = n.new("ShaderNodeTexNoise", Scale=3.0, Detail=6.0)
+    n.link(mp, None, age, "Vector")
+    col = n.mix("RGBA", pat, srgb(base), srgb(ink))
+    col2 = n.mix("RGBA", 0.12, col, (age, "Color"), blend="OVERLAY")
+    b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.75)
+    n.link(col2, None, b, "Base Color")
+    fine = n.new("ShaderNodeTexNoise", Scale=500.0, Detail=3)
+    n.link(mp, None, fine, "Vector")
+    bump = n.new("ShaderNodeBump", Strength=0.08, Distance=0.0003)
+    n.link(fine, "Fac", bump, "Height")
+    n.link(bump, None, b, "Normal")
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    return mat

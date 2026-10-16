@@ -30,7 +30,7 @@ def build(ctx: Ctx):
     box("Floor", X1 - X0, Y1 - Y0, 0.05, ((X0 + X1) / 2, (Y0 + Y1) / 2, -0.025), floor, col)
     box("Ceiling", X1 - X0, Y1 - Y0, 0.05, ((X0 + X1) / 2, (Y0 + Y1) / 2, H + 0.025), ceiling, col)
     # back wall (behind the desk) with the main window
-    back_win = dict(c=-0.45, w=1.35, b=0.86, t=2.2)
+    back_win = dict(c=0.05, w=1.35, b=0.8, t=2.2)  # right behind the desk: bright window bokeh behind the print
     wall("BackWall", col, plaster, "y", Y1, X0, X1, 0, H, openings=[(back_win["c"], back_win["w"], back_win["b"], back_win["t"])])
     window("BackWindow", col, "y", Y1, back_win["c"], back_win["w"], back_win["b"], back_win["t"], inward=-1, panes=(3, 3))
     curtain("CurtainL", col, "y", Y1, back_win["c"] - back_win["w"] / 2 - 0.12, 0.5, 0.25, 2.45, -1, sheer=0.6)
@@ -135,7 +135,7 @@ def build(ctx: Ctx):
 
     # bookcase in the background (right of the window)
     bc_wood = M.wood("Bookcase", "oak", varnish=0.5, wear=0.4, scale=1.0, grain_axis="X", seed=5.5)
-    bx, by = 1.25, Y1 - 0.2
+    bx, by = 1.45, Y1 - 0.2
     box("BookcaseSideL", 0.025, 0.32, 2.0, (bx - 0.45, by, 1.0), bc_wood, col, bevel=0.003)
     box("BookcaseSideR", 0.025, 0.32, 2.0, (bx + 0.45, by, 1.0), bc_wood, col, bevel=0.003)
     for k, z in enumerate((0.05, 0.45, 0.85, 1.25, 1.65, 2.0)):
@@ -160,7 +160,7 @@ def build(ctx: Ctx):
 
     # sun aiming through the side window
     ctx.sun_window = dict(centre=(X0, side_win["c"], (side_win["b"] + side_win["t"]) / 2), bottom=side_win["b"],
-                          top=side_win["t"])
+                          top=side_win["t"], along=(0, 1, 0), width=side_win["w"], panes=2, rows=3)
     back_window_centre = Vector((back_win["c"], Y1, (back_win["b"] + back_win["t"]) / 2))
 
     anchors = Anchors(

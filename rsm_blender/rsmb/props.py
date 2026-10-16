@@ -486,3 +486,286 @@ def potted_plant(name, col, loc, rng=None, leaves=14, pot_color="#b5653d"):
         set_smooth(lf)
         lf.parent = root
     return root
+
+
+# ---------------------------------------------------------------------------
+# Kitchen and living room
+# ---------------------------------------------------------------------------
+
+def teapot(name, col, loc, rot_z=0.0, color="#e8e2d4"):
+    root = _group(name, col, loc, rot_z)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.04, speckle=0.2, crazing=0.5)
+    body = lathe(f"{name}_body", [(0.0, 0.0), (0.045, 0.0), (0.06, 0.008), (0.078, 0.04), (0.082, 0.065),
+                                  (0.072, 0.1), (0.05, 0.118), (0.044, 0.12), (0.042, 0.115), (0.0, 0.112)], 72,
+                 glaze, col)
+    add_subsurf(body, 1, 2)
+    _parent(body, root)
+    lid = lathe(f"{name}_lid", [(0.0, 0.0), (0.046, 0.0), (0.044, 0.006), (0.03, 0.016), (0.01, 0.02),
+                                (0.012, 0.03), (0.0, 0.034)], 48, glaze, col, loc=(0, 0, 0.116))
+    _parent(lid, root)
+    for kind, pts, depth in (("spout", [(0.07, 0, 0.045), (0.11, 0, 0.07), (0.13, 0, 0.11)], 0.012),
+                             ("handle", [(-0.07, 0, 0.1), (-0.115, 0, 0.075), (-0.07, 0, 0.03)], 0.007)):
+        curve = bpy.data.curves.new(f"{name}_{kind}", "CURVE")
+        curve.dimensions = "3D"
+        sp = curve.splines.new("BEZIER")
+        sp.bezier_points.add(len(pts) - 1)
+        for bp, co in zip(sp.bezier_points, pts):
+            bp.co = co
+            bp.handle_left_type = bp.handle_right_type = "AUTO"
+        curve.bevel_depth = depth
+        curve.bevel_resolution = 6
+        if kind == "spout":
+            sp.bezier_points[-1].radius = 0.55
+        o = bpy.data.objects.new(f"{name}_{kind}", curve)
+        link(o, col)
+        o.data.materials.append(glaze)
+        _parent(o, root)
+    return root
+
+
+def cup_and_saucer(name, col, loc, rot_z=0.0, color="#f0ece2", tea=0.7):
+    root = _group(name, col, loc, rot_z)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.03, speckle=0.1, crazing=0.3)
+    saucer = lathe(f"{name}_saucer", [(0.0, 0.0), (0.04, 0.0), (0.05, 0.004), (0.07, 0.012), (0.074, 0.016),
+                                      (0.071, 0.017), (0.05, 0.009), (0.0, 0.007)], 72, glaze, col)
+    _parent(saucer, root)
+    cup = lathe(f"{name}_cup", [(0.0, 0.0), (0.024, 0.0), (0.028, 0.004), (0.042, 0.03), (0.046, 0.058),
+                                (0.044, 0.06), (0.041, 0.057), (0.026, 0.008), (0.0, 0.007)], 72, glaze, col,
+                loc=(0, 0, 0.008))
+    add_subsurf(cup, 1, 2)
+    _parent(cup, root)
+    if tea > 0:
+        liquid = bpy.data.materials.new(f"{name}_tea")
+        liquid.use_nodes = True
+        b = liquid.node_tree.nodes.get("Principled BSDF")
+        b.inputs["Base Color"].default_value = (0.16, 0.05, 0.01, 1.0)
+        b.inputs["Roughness"].default_value = 0.02
+        z = 0.008 + 0.007 + 0.045 * tea
+        disc = mesh_object(f"{name}_tea", cylinder_bm(0.026 + 0.015 * tea, 0.001, 64, True, (0, 0, z)), col,
+                           mat=liquid)
+        set_smooth(disc)
+        _parent(disc, root)
+    return root
+
+
+def fruit_bowl(name, col, loc, rng=None, color="#3f5d6b"):
+    rng = rng or random.Random(9)
+    root = _group(name, col, loc)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.1, speckle=0.5)
+    bowl = lathe(f"{name}_bowl", [(0.0, 0.0), (0.05, 0.0), (0.06, 0.01), (0.12, 0.06), (0.13, 0.07),
+                                  (0.124, 0.071), (0.115, 0.064), (0.055, 0.016), (0.0, 0.014)], 72, glaze, col)
+    add_subsurf(bowl, 1, 2)
+    _parent(bowl, root)
+    fruit_mats = {
+        "apple": ("#9b2a1c", 0.35), "green_apple": ("#8aa83a", 0.35), "orange": ("#e07a1c", 0.55),
+        "lemon": ("#e8c53a", 0.45),
+    }
+    for i in range(7):
+        kind = rng.choice(list(fruit_mats))
+        hexc, rough = fruit_mats[kind]
+        m = bpy.data.materials.get(f"Fruit_{kind}")
+        if m is None:
+            m = bpy.data.materials.new(f"Fruit_{kind}")
+            m.use_nodes = True
+            b = m.node_tree.nodes.get("Principled BSDF")
+            from .util import srgb
+            b.inputs["Base Color"].default_value = srgb(hexc)
+            b.inputs["Roughness"].default_value = rough
+            b.inputs["Subsurface Weight"].default_value = 0.25
+            b.inputs["Subsurface Radius"].default_value = (0.006, 0.003, 0.002)
+            b.inputs["Coat Weight"].default_value = 0.4 if "apple" in kind else 0.0
+        r = 0.034 if kind != "lemon" else 0.03
+        ang = rng.uniform(0, 2 * math.pi)
+        d = rng.uniform(0, 0.06) if i else 0.0
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=r, segments=40, ring_count=20,
+                                             location=(math.cos(ang) * d, math.sin(ang) * d, 0.03 + r * 0.9 + (0.02 if i > 4 else 0)))
+        f = bpy.context.object
+        for c in f.users_collection:
+            c.objects.unlink(f)
+        col.objects.link(f)
+        f.name = f"{name}_{kind}{i}"
+        f.scale = (1.0, 1.0, 0.9 if "apple" in kind else (1.25 if kind == "lemon" else 0.95))
+        f.rotation_euler = (rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4), rng.uniform(0, 6.28))
+        f.data.materials.append(m)
+        set_smooth(f)
+        f.parent = root
+    return root
+
+
+def jar(name, col, loc, fill_color="#7a1c2a", label=True):
+    root = _group(name, col, loc)
+    g = M.glass(f"{name}_glass", "#f4f8f6", 0.0, 1.5, smudge=0.3)
+    body = lathe(f"{name}_glass", [(0.0, 0.0), (0.03, 0.0), (0.034, 0.006), (0.034, 0.08), (0.028, 0.09),
+                                   (0.028, 0.1), (0.0, 0.1)], 64, g, col)
+    _parent(body, root)
+    jam = M.ceramic(f"{name}_jam", fill_color, rough=0.15, speckle=0.0)
+    fill = lathe(f"{name}_fill", [(0.0, 0.002), (0.0315, 0.004), (0.0315, 0.06), (0.0, 0.062)], 48, jam, col)
+    _parent(fill, root)
+    lid = cylinder(f"{name}_lid", 0.031, 0.014, (0, 0, 0.1), M.fabric(f"{name}_gingham", "#f2efe6", 1600, 0.85, 0.3,
+                                                                      pattern="gingham", pattern_color="#b8463c",
+                                                                      pattern_scale=60.0), col, 48, bevel=0.002)
+    _parent(lid, root)
+    if label:
+        lab = cylinder(f"{name}_label", 0.0345, 0.035, (0, 0, 0.03), M.paper(f"{name}_paper", "#efe6cf", 0.7, 0.4,
+                                                                             ink_lines=True, line_color="#2a2a40"),
+                       col, 64)
+        _parent(lab, root)
+    return root
+
+
+def vase_with_stems(name, col, loc, rng=None, color="#b9c4c9"):
+    rng = rng or random.Random(10)
+    root = _group(name, col, loc)
+    glaze = M.ceramic(f"{name}_glaze", color, rough=0.2, speckle=0.4, crazing=0.4)
+    v = lathe(f"{name}_vase", [(0.0, 0.0), (0.035, 0.0), (0.05, 0.04), (0.045, 0.1), (0.022, 0.15), (0.024, 0.17),
+                               (0.02, 0.17), (0.018, 0.15), (0.0, 0.15)], 64, glaze, col)
+    add_subsurf(v, 1, 2)
+    _parent(v, root)
+    stem_mat = bpy.data.materials.new(f"{name}_stem")
+    stem_mat.use_nodes = True
+    sb = stem_mat.node_tree.nodes.get("Principled BSDF")
+    sb.inputs["Base Color"].default_value = (0.08, 0.15, 0.04, 1)
+    sb.inputs["Roughness"].default_value = 0.6
+    bloom = bpy.data.materials.new(f"{name}_flower")
+    bloom.use_nodes = True
+    bb = bloom.node_tree.nodes.get("Principled BSDF")
+    bb.inputs["Base Color"].default_value = (0.9, 0.85, 0.7, 1)
+    bb.inputs["Subsurface Weight"].default_value = 0.5
+    bb.inputs["Roughness"].default_value = 0.5
+    for i in range(7):
+        ang = rng.uniform(0, 2 * math.pi)
+        tilt = rng.uniform(0.1, 0.45)
+        L = rng.uniform(0.18, 0.3)
+        curve = bpy.data.curves.new(f"{name}_stem{i}", "CURVE")
+        curve.dimensions = "3D"
+        sp = curve.splines.new("BEZIER")
+        sp.bezier_points.add(1)
+        top = (math.cos(ang) * math.sin(tilt) * L, math.sin(ang) * math.sin(tilt) * L, 0.12 + math.cos(tilt) * L)
+        sp.bezier_points[0].co = (0, 0, 0.1)
+        sp.bezier_points[1].co = top
+        for bp in sp.bezier_points:
+            bp.handle_left_type = bp.handle_right_type = "AUTO"
+        curve.bevel_depth = 0.0016
+        st = bpy.data.objects.new(f"{name}_stem{i}", curve)
+        link(st, col)
+        st.data.materials.append(stem_mat)
+        _parent(st, root)
+        # small flower head (cluster of spheres)
+        for k in range(6):
+            bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.006,
+                                                  location=(top[0] + rng.uniform(-0.01, 0.01),
+                                                            top[1] + rng.uniform(-0.01, 0.01),
+                                                            top[2] + rng.uniform(-0.006, 0.008)))
+            fh = bpy.context.object
+            for c in fh.users_collection:
+                c.objects.unlink(fh)
+            col.objects.link(fh)
+            fh.data.materials.append(bloom)
+            fh.parent = root
+    return root
+
+
+def alarm_clock(name, col, loc, rot_z=0.0, color="#8c2f2f"):
+    """Twin-bell wind-up alarm clock."""
+    root = _group(name, col, loc, rot_z)
+    paint = M.metal(f"{name}_paint", color, rough=0.25, smudge=0.3, tarnish=0.1)
+    chrome = M.metal(f"{name}_chrome", "#d8d8d8", rough=0.12, smudge=0.4, tarnish=0.05)
+    body = cylinder(f"{name}_body", 0.048, 0.03, (0, 0, 0), paint, col, 64, bevel=0.004)
+    body.rotation_euler = (math.radians(90), 0, 0)
+    body.location = (0, 0.015, 0.058)
+    _parent(body, root)
+    face = cylinder(f"{name}_face", 0.042, 0.002, (0, -0.016, 0.058), M.paper(f"{name}_dial", "#f2ecdc", 0.5, 0.2), col, 64)
+    face.rotation_euler = (math.radians(90), 0, 0)
+    _parent(face, root)
+    glass = cylinder(f"{name}_glass", 0.044, 0.004, (0, -0.019, 0.058), M.glass(f"{name}_crystal", "#ffffff", 0.0), col, 64)
+    glass.rotation_euler = (math.radians(90), 0, 0)
+    _parent(glass, root)
+    for i in range(12):  # hour marks
+        a = i / 12 * 2 * math.pi
+        mk = box(f"{name}_mark{i}", 0.002, 0.0008, 0.006, (math.sin(a) * 0.035, -0.0172, 0.058 + math.cos(a) * 0.035),
+                 M.plastic("ink", "#1a1a1a", 0.6), col)
+        mk.rotation_euler = (0, -a, 0)
+        _parent(mk, root)
+    for i, (L, a) in enumerate(((0.024, 1.1), (0.034, 4.1))):
+        hand = box(f"{name}_hand{i}", 0.0018, 0.0006, L, (math.sin(a) * L / 2, -0.0178, 0.058 + math.cos(a) * L / 2),
+                   M.plastic("hand", "#111111", 0.4), col)
+        hand.rotation_euler = (0, -a, 0)
+        _parent(hand, root)
+    for sx in (-1, 1):
+        bell = lathe(f"{name}_bell", [(0.0, 0.0), (0.026, 0.0), (0.024, 0.012), (0.012, 0.022), (0.0, 0.024)], 48,
+                     chrome, col, loc=(sx * 0.03, 0.015, 0.1))
+        bell.rotation_euler = (0, sx * math.radians(-25), 0)
+        _parent(bell, root)
+        leg = cylinder(f"{name}_leg", 0.004, 0.02, (sx * 0.03, 0.015, 0.0), chrome, col, 16)
+        leg.rotation_euler = (0, sx * math.radians(20), 0)
+        _parent(leg, root)
+    return root
+
+
+def carriage_clock(name, col, loc, rot_z=0.0):
+    root = _group(name, col, loc, rot_z)
+    brass = M.metal(f"{name}_brass", "#caa45a", rough=0.18, smudge=0.4, tarnish=0.3)
+    glassm = M.glass(f"{name}_glass", "#ffffff", 0.0)
+    base = box(f"{name}_base", 0.085, 0.07, 0.012, (0, 0, 0.006), brass, col, bevel=0.002)
+    top = box(f"{name}_top", 0.085, 0.07, 0.012, (0, 0, 0.122), brass, col, bevel=0.002)
+    for o in (base, top):
+        _parent(o, root)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p = cylinder(f"{name}_pillar", 0.004, 0.11, (sx * 0.037, sy * 0.029, 0.012), brass, col, 16)
+            _parent(p, root)
+    g = box(f"{name}_glass", 0.072, 0.058, 0.108, (0, 0, 0.066), glassm, col)
+    _parent(g, root)
+    dial = box(f"{name}_dial", 0.05, 0.002, 0.05, (0, -0.02, 0.07), M.paper(f"{name}_dial", "#f3eedf", 0.45, 0.2), col)
+    _parent(dial, root)
+    handle = bpy.data.curves.new(f"{name}_handle", "CURVE")
+    handle.dimensions = "3D"
+    sp = handle.splines.new("BEZIER")
+    sp.bezier_points.add(2)
+    for bp, co in zip(sp.bezier_points, [(-0.03, 0, 0.128), (0, 0, 0.15), (0.03, 0, 0.128)]):
+        bp.co = co
+        bp.handle_left_type = bp.handle_right_type = "AUTO"
+    handle.bevel_depth = 0.0025
+    ho = bpy.data.objects.new(f"{name}_handle", handle)
+    link(ho, col)
+    ho.data.materials.append(brass)
+    _parent(ho, root)
+    return root
+
+
+def old_trunk(name, col, loc, rot_z=0.0, size=(0.9, 0.5, 0.45), lid_open_deg=105.0):
+    """Wooden travel trunk with leather straps and brass corners. Opening faces +Y... lid hinged at the back."""
+    w, d, h = size
+    root = _group(name, col, loc, rot_z)
+    wood = M.wood(f"{name}_wood", "aged_beam", varnish=0.2, wear=0.8, dust=0.4, scale=1.5, grain_axis="X",
+                  planks=(0.6, 0.11))
+    inner = M.paper(f"{name}_lining", "#9c8a6a", rough=0.85, age=0.8)
+    brass = M.metal(f"{name}_brass", "#a8853f", rough=0.4, smudge=0.6, tarnish=0.7)
+    strap = M.leather(f"{name}_strap", "#4a2c1a", 0.55, 0.7)
+    t = 0.015
+    parts = [(w, d, t, (0, 0, t / 2)), (w, t, h, (0, -d / 2 + t / 2, h / 2)), (w, t, h, (0, d / 2 - t / 2, h / 2)),
+             (t, d, h, (-w / 2 + t / 2, 0, h / 2)), (t, d, h, (w / 2 - t / 2, 0, h / 2))]
+    for i, (sx, sy, sz, c) in enumerate(parts):
+        b = box(f"{name}_side{i}", sx, sy, sz, c, wood, col, bevel=0.003)
+        _parent(b, root)
+    lining = box(f"{name}_lining", w - 2 * t - 0.002, d - 2 * t - 0.002, 0.002, (0, 0, t + 0.001), inner, col)
+    _parent(lining, root)
+    # lid hinged at the back edge
+    hinge = bpy.data.objects.new(f"{name}_hinge", None)
+    link(hinge, col)
+    hinge.parent = root
+    hinge.location = (0, d / 2, h)
+    hinge.rotation_euler = (math.radians(lid_open_deg), 0, 0)
+    lid = box(f"{name}_lid", w + 0.01, d + 0.01, 0.06, (0, -d / 2, 0.03), wood, col, bevel=0.004)
+    lid.parent = hinge
+    lid_in = box(f"{name}_lidlining", w - 0.03, d - 0.03, 0.002, (0, -d / 2, -0.001), inner, col)
+    lid_in.parent = hinge
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c = box(f"{name}_corner", 0.05, 0.05, 0.05, (sx * (w / 2 - 0.02), sy * (d / 2 - 0.02), 0.025), brass, col,
+                    bevel=0.006)
+            _parent(c, root)
+    for sx in (-0.25, 0.25):
+        s = box(f"{name}_strap", 0.04, 0.004, h - 0.02, (sx * w, -d / 2 - 0.002, h / 2), strap, col, bevel=0.001)
+        _parent(s, root)
+    return root
