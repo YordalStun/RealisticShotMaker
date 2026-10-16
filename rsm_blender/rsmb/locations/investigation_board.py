@@ -90,7 +90,7 @@ def _fingerprint_mat(name="Fingerprint"):
     n.link(mp, None, smear, "Vector")
     smear_m = n.ramp((smear, "Fac"), [(0.35, (0.15, 0.15, 0.15)), (0.65, (1, 1, 1))])
     r = n.math("MULTIPLY", n.math("MULTIPLY", (ridge, "Color"), (edge, "Color")), (smear_m, "Color"))
-    n.link(n.math("MULTIPLY", r, 0.09), None, b, "Alpha")
+    n.link(n.math("MULTIPLY", r, 0.13), None, b, "Alpha")
     out = n.new("ShaderNodeOutputMaterial")
     n.link(b, None, out, "Surface")
     return mat
