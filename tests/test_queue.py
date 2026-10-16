@@ -72,3 +72,26 @@ def _dispose(*objs):
         if shiboken6.isValid(o):
             shiboken6.delete(o)
     _app().processEvents()
+
+
+def test_output_viewer_finds_real_frames(tmp_path):
+    _app()
+    from PIL import Image
+    from rsm.gui.output_viewer import OutputViewer
+    from rsm.gui.render_queue import QueueItem
+    frames = tmp_path / "shot" / "frames"
+    thumbs = tmp_path / "shot" / "thumbs"
+    frames.mkdir(parents=True)
+    thumbs.mkdir()
+    for i in (1, 2, 3):
+        Image.new("RGB", (64, 36), (i * 60, 20, 20)).save(thumbs / f"frame_{i:05d}.png")
+    Image.new("RGB", (64, 36)).save(frames / "frame_00004.png")     # only the full frame exists yet
+    job = tmp_path / "shot" / "job.json"
+    job.write_text(json.dumps({"paths": {"frames": str(frames)}}))
+    item = QueueItem(ShotSpec(), state="running", job_path=str(job))
+    v = OutputViewer()
+    v.show_item(item)
+    assert [n for n, _ in v.frames] == [1, 2, 3, 4]
+    assert v.frames[0][1].endswith(str(thumbs / "frame_00001.png"))   # previews preferred
+    assert v.i == 3                                                   # follows the newest
+    _dispose(v)

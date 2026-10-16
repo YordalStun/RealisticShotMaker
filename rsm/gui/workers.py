@@ -92,9 +92,10 @@ class RenderJob(QObject):
             def on_update(p: Progress):
                 self.progress = p
                 self.updated.emit(p)
-                if p.last_frame_path and p.last_frame_path != last_frame["p"]:
-                    last_frame["p"] = p.last_frame_path
-                    self.frame_ready.emit(p.last_frame_path)
+                shown = p.last_thumb_path or p.last_frame_path
+                if shown and shown != last_frame["p"]:
+                    last_frame["p"] = shown
+                    self.frame_ready.emit(shown)
             self.proc = RenderProcess(self.blender, Path(self.job_path), on_update, extra).start()
             code = self.proc.wait()
             if self.cancelled:

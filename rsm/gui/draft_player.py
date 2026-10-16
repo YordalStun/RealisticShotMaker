@@ -15,25 +15,27 @@ _NUM = re.compile(r"(\d+)(?=\.\w+$)")
 
 
 class _FrameView(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, fixed_aspect: bool = True):
         super().__init__(parent)
         self.pix: QPixmap | None = None
         self.text = ""
         self.fraction = 0.0      # how much of the draft has rendered (thin bar along the bottom)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.fixed_aspect = fixed_aspect
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed if fixed_aspect else QSizePolicy.Expanding)
         self.setMinimumHeight(180)
 
     def heightForWidth(self, w):
         return int(w * 9 / 16)
 
     def hasHeightForWidth(self):
-        return True
+        return self.fixed_aspect
 
     def sizeHint(self):
         return QSize(448, 252)
 
     def resizeEvent(self, ev):
-        self.setFixedHeight(int(self.width() * 9 / 16))
+        if self.fixed_aspect:
+            self.setFixedHeight(int(self.width() * 9 / 16))
         super().resizeEvent(ev)
 
     def paintEvent(self, ev):

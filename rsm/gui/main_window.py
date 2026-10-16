@@ -19,6 +19,7 @@ from ..blender_locator import app_data_dir, download_blender, find_blender
 from ..estimate import estimate
 from ..spec import ShotSpec
 from .draft_player import DraftPlayer
+from .output_viewer import OutputViewer
 from .fields import SECTIONS, Field, get_attr, set_attr
 from .preview_popup import MoveHoverWatcher, PreviewPopup
 from .render_queue import QueuePanel, RenderQueue, power_action
@@ -106,7 +107,7 @@ class MainWindow(QMainWindow):
         self._draft_ticket = 0
         self.rq = RenderQueue(lambda: self.blender if self.blender and os.path.exists(self.blender) else "",
                               app_data_dir() / "queue.json", self)
-        self.rq.frame_ready.connect(lambda item, path: self.monitor.set_image(path))
+        self.rq.frame_ready.connect(self._queue_frame)
         self.rq.all_done.connect(self._queue_finished)
         self.bridge = _Bridge()
         self.bridge.blender_found.connect(self._on_blender_found)
@@ -195,8 +196,12 @@ class MainWindow(QMainWindow):
         lbl.setObjectName("Caption")
         card_box.addWidget(lbl)
         card_box.addWidget(self.card_view, 1)
+        self.output_viewer = OutputViewer()
+        self.view_tabs = QTabWidget()
+        self.view_tabs.addTab(self.monitor, "Preview frame")
+        self.view_tabs.addTab(self.output_viewer, "Render output")
         top = QHBoxLayout()
-        top.addWidget(self.monitor, 1)
+        top.addWidget(self.view_tabs, 1)
         top.addLayout(card_box)
 
         self.time_slider = QSlider(Qt.Horizontal)
@@ -224,6 +229,8 @@ class MainWindow(QMainWindow):
         # queue
         self.queue_panel = QueuePanel(self.rq)
         self.queue_panel.load_requested.connect(self._load_spec)
+        self.queue_panel.selected_changed.connect(self._queue_selected)
+        self.rq.progressed.connect(self._queue_progress)
         self.queue_panel.regrade_requested.connect(self._regrade)
         self.queue_panel.when_done.setCurrentIndex(max(0, self.queue_panel.when_done.findData(
             self.settings.value("when_queue_done", "nothing"))))
@@ -728,6 +735,26 @@ class MainWindow(QMainWindow):
         when = "now" if self.rq.active and self.rq.running() is item else (
             "when the shots ahead of it finish" if self.rq.active else "when you press Start queue")
         self.blender_label.setText(f"“{item.title}” added to the render queue. It renders {when}.")
+
+    # ------------------------------------------------------------------ real output while rendering
+    def _queue_frame(self, item, path: str):
+        """A frame of a queued render has finished: show the real output."""
+        if self.output_viewer.item is None or (self.queue_panel.selected() is None and item.state == "running"):
+            first = self.output_viewer.item is not item
+            self.output_viewer.show_item(item)
+            if first:
+                self.view_tabs.setCurrentWidget(self.output_viewer)
+        self.output_viewer.frame_arrived(item, path)
+
+    def _queue_progress(self, item):
+        if self.output_viewer.item is None and item.state == "running":
+            self.output_viewer.show_item(item)
+        self.output_viewer.update_progress(item)
+
+    def _queue_selected(self, item):
+        if item is not None:
+            self.output_viewer.show_item(item)
+            self.view_tabs.setCurrentWidget(self.output_viewer)
 
     def _regrade(self, src):
         if not src.job_path:

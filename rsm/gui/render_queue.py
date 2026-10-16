@@ -252,6 +252,7 @@ class QueuePanel(QWidget):
     """The queue as a table with the controls people need for a night of rendering."""
     load_requested = Signal(object)      # ShotSpec to load into the editor
     regrade_requested = Signal(object)   # finished QueueItem
+    selected_changed = Signal(object)    # QueueItem or None
 
     COLS = ["#", "Shot", "Set", "Size", "Status", "Progress", "Time left"]
 
@@ -294,6 +295,7 @@ class QueuePanel(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._menu)
         self.table.itemSelectionChanged.connect(self._update_buttons)
+        self.table.itemSelectionChanged.connect(lambda: self.selected_changed.emit(self.selected()))
         self.table.cellDoubleClicked.connect(lambda r, c: self._double(r))
         lay.addWidget(self.table, 1)
 

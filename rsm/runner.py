@@ -31,6 +31,9 @@ class Progress:
     message: str = ""
     device: str = ""
     last_frame_path: str = ""
+    last_thumb_path: str = ""      # small preview copy of the newest finished frame (quick for the app to show)
+    sample: int = 0                # progress inside the frame being rendered
+    samples: int = 0
     log: list = field(default_factory=list)
 
     @property
@@ -94,7 +97,9 @@ class RenderProcess:
                     try:
                         frag = line.split("Sample", 1)[1].strip().split()[0]
                         a, b = frag.split("/")
-                        p.message = f"Frame {p.frame}: sample {a} of {b}"
+                        p.sample, p.samples = int(a), int(b)
+                        p.message = f"Frame {p.done + 1} of {p.total}: sample {a} of {b}" if p.total else \
+                            f"Frame {p.frame}: sample {a} of {b}"
                         self._emit()
                     except (IndexError, ValueError):
                         pass
@@ -115,6 +120,7 @@ class RenderProcess:
                 p.stage = "rendering"
                 p.message = "Scene built"
             elif kind == "frame_start":
+                p.sample, p.samples = 0, 0
                 p.frame = ev["frame"]
                 p.total = ev["total"]
                 p.message = f"Rendering frame {ev['index'] + 1} of {ev['total']}"
@@ -126,6 +132,8 @@ class RenderProcess:
                 p.total = ev["total"]
                 if ev.get("path"):
                     p.last_frame_path = ev["path"]
+                if ev.get("thumb"):
+                    p.last_thumb_path = ev["thumb"]
                 recent = self._frame_times[-8:]
                 if recent:
                     avg = sum(recent) / len(recent)

@@ -165,6 +165,22 @@ def build_scene(job: dict):
     return scene
 
 
+def write_thumb(job: dict, f: int, img: np.ndarray, width: int = 960) -> str:
+    """A small 8-bit copy of a developed frame next to the job, so the app can show and play the real output
+    quickly even when the frames themselves are 4K/8K 16-bit."""
+    h, w = img.shape[:2]
+    k = max(1, int(math.ceil(w / width)))
+    small = img[: h // k * k, : w // k * k].reshape(h // k, k, w // k, k, 3).mean(axis=(1, 3))
+    d = os.path.join(os.path.dirname(job["paths"]["frames"]), "thumbs")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"frame_{f:05d}.png")
+    try:
+        filmlab.write_png8(path, small)
+    except OSError:
+        return ""
+    return path
+
+
 def load_exr(path: str) -> np.ndarray:
     img = bpy.data.images.load(path, check_existing=False)
     w, h = img.size
@@ -256,8 +272,10 @@ def main():
             lab = filmlab.FilmLab(job["filmlab"], lin.shape[0], lin.shape[1],
                                   seed=int(job["spec"]["scene"].get("seed", 7)))
         os.makedirs(job["paths"]["frames"], exist_ok=True)
-        filmlab.write_png16(png, lab.process(lin, f - fs, float(res["fps"])))
-        log("frame_done", frame=f, index=i, total=total, path=png, elapsed=round(time.time() - t_start, 1))
+        developed = lab.process(lin, f - fs, float(res["fps"]))
+        filmlab.write_png16(png, developed)
+        thumb = write_thumb(job, f, developed)
+        log("frame_done", frame=f, index=i, total=total, path=png, thumb=thumb, elapsed=round(time.time() - t_start, 1))
     log("render_done", total=total, seconds=round(time.time() - t_start, 1))
 
 
