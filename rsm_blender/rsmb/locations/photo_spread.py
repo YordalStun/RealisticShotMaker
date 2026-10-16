@@ -17,7 +17,7 @@ from .. import props as P
 from ..camera_rig import Anchors
 from ..util import add_subsurf, box, cylinder, lathe, link, mesh_object, set_smooth
 from ..world import kelvin_rgb
-from .common import (Ctx, Room, curtain, opt, outdoor_backdrop, place_card, scatter_prints, surface_z, switched_on,
+from .common import (Ctx, Room, curtain, opt, outdoor_backdrop, place_card, rest_z, scatter_prints, surface_z, switched_on,
                      wall, window)
 
 TABLE_Z = 0.45
@@ -285,6 +285,10 @@ def build(ctx: Ctx):
         pen.location = (0.4, 0.04, surf + 0.0038)
         pen.rotation_euler = (0, math.radians(90), math.radians(rng.uniform(60, 120)))
         P.envelope("SpreadEnvelope", col, (0.47, -0.02, surf), math.radians(rng.uniform(-20, 20)))
+    if clutter > 0.4:
+        lx, ly = anchor.x - 0.17, anchor.y - 0.07
+        P.loupe("Loupe", col, (lx, ly, rest_z(lx, ly, surf)), 0.0)
+        P.film_canister("SpreadFilm", col, (-0.5, 0.15, rest_z(-0.5, 0.15, surf)), rng.uniform(0, 6.28))
 
     view = Vector((0.15, -1.0, 0.0)).normalized()
     vd = Vector((view.x * math.cos(math.radians(el)), view.y * math.cos(math.radians(el)), math.sin(math.radians(el))))

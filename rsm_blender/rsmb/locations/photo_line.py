@@ -103,6 +103,10 @@ def build(ctx: Ctx):
             M.metal("DeskLegSteel", "#2a2a2c", 0.4, 0.3, 0.1), col)
     P.book_stack("LineBooks", col, (0.55, Y1 - 0.35, desk_z), 3, rng, rot_z=math.radians(10))
     P.mug("LineMug", col, (-0.5, Y1 - 0.45, desk_z), rng.uniform(0, 6.28), "#d9d2c4", coffee=0.3)
+    # the camera that took them, and a couple of rolls of film
+    P.film_camera("FilmCamera", col, (0.64, Y1 - 0.585, desk_z), math.radians(rng.uniform(-25, -5)))
+    P.film_canister("FilmRoll1", col, (0.4, Y1 - 0.61, desk_z), rng.uniform(0, 6.28))
+    P.film_canister("FilmRoll2", col, (0.45, Y1 - 0.6, desk_z), rng.uniform(0, 6.28), label="#2f5a8a", band="#e3b23c")
     lights = []
     if darkroom:
         # developing trays and the red safelight

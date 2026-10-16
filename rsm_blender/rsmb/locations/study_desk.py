@@ -148,6 +148,10 @@ def build(ctx: Ctx):
             P.paperclip(f"Clip{k}", col, (px, py, rest_z(px, py, surf)), rng.uniform(0, math.pi), rusty=k == 2)
     if clutter > 0.6 and opt(ctx, "letters", True):
         P.postage_stamps("Stamps", col, (-0.4, 0.27, rest_z(-0.4, 0.27, surf)), 3, rng)
+        P.sealed_letter("SealedLetter", col, (-0.4, 0.4, rest_z(-0.4, 0.4, surf)), math.radians(rng.uniform(10, 30)))
+    if clutter > 0.5:
+        P.ink_bottle("InkBottle", col, (0.3, 0.3, rest_z(0.3, 0.3, surf)), math.radians(rng.uniform(0, 360)))
+        P.pocket_watch("PocketWatch", col, (-0.45, 0.16, rest_z(-0.45, 0.16, surf)), rng.uniform(0, 6.28), rng)
 
     if opt(ctx, "bookcase", True):
         _bookcase(col, rng, 1.45, Y1 - 0.2)

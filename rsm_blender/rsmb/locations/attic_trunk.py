@@ -160,15 +160,20 @@ def build(ctx: Ctx):
         # an old suitcase and a hatbox
         box("Suitcase", 0.62, 0.2, 0.42, (-1.2, 1.3, 0.21), M.leather("Suitcase", "#5a3a24", 0.55, 0.8), col, bevel=0.02)
         cylinder("Hatbox", 0.2, 0.22, (-0.9, -1.3, 0.0), M.paper("Hatbox", "#b9a38a", 0.8, 0.8), col, 64, bevel=0.004)
+    lantern_light = None
     if clutter > 0.3:
         # an old teddy sitting against the trunk, a rolled rug along the wall
         P.teddy_bear("Teddy", col, (trunk_loc.x - 0.62, trunk_loc.y - 0.12, 0.0), math.radians(rng.uniform(-30, 10)))
         P.rolled_rug("RolledRug", col, (1.25, 0.9, 0.0), math.radians(rng.uniform(-10, 10)))
+        _, lantern_light = P.hurricane_lantern("Lantern", col, (0.82, -0.48, 0.0), rng.uniform(0, 6.28),
+                                               lit=ctx.lights_on)
     if clutter > 0.65:
         P.candle("AtticCandle", col, (trunk_loc.x + 0.55, trunk_loc.y - 0.25, 0.0), 0.09, 0.025, lit=False)
         box("Crate", 0.45, 0.35, 0.3, (1.0, -0.9, 0.15), M.wood("Crate", "pine", 0.0, 0.8, 0.5, planks=(0.6, 0.09)), col,
             bevel=0.004)
     lights = []
+    if clutter > 0.3 and lantern_light is not None:
+        lights.append(lantern_light)
     if opt(ctx, "cobwebs", True):
         pairs = []
         for i in range(10):

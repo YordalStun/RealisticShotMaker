@@ -181,6 +181,8 @@ def build(ctx: Ctx):
     if clutter > 0.4:
         # tissues on the floor beside the table, half in shadow
         P.tissue_box("Tissues", col, (tx - 0.36, ty - 0.05, 0.0), math.radians(rng.uniform(-20, 20)))
+    if clutter > 0.55:
+        P.wristwatch("Watch", col, (tx + 0.0, ty - 0.185, surf), math.radians(90 + rng.uniform(-8, 8)))
     if s.get("extra_photos", True) and extras and clutter > 0.6:
         scatter_prints(extras[:1], col, Vector((tx + 0.16, ty - 0.13, surf)), 0.02, rng, surf)
 

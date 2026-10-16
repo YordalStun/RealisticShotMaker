@@ -1140,3 +1140,307 @@ def manila_folder(name, col, loc, rot_z=0.0, papers=3, rng=None):
         s.rotation_euler = (0, 0, rng.uniform(-0.12, 0.12))
         _parent(s, root)
     return root
+
+
+# ---------------------------------------------------------------------------
+# Second round: things with a story
+# ---------------------------------------------------------------------------
+
+def _torus(name, col, major, minor, loc, rot=(0, 0, 0), mat=None, seg=(32, 10)):
+    bpy.ops.mesh.primitive_torus_add(major_radius=major, minor_radius=minor, major_segments=seg[0],
+                                     minor_segments=seg[1], location=loc)
+    o = bpy.context.object
+    o.name = name
+    o.rotation_euler = rot
+    if mat is not None:
+        o.data.materials.append(mat)
+    set_smooth(o)
+    for c in o.users_collection:
+        c.objects.unlink(o)
+    col.objects.link(o)
+    return o
+
+
+def film_camera(name, col, loc, rot_z=0.0):
+    """A 1970s 35mm SLR: leatherette body, chrome top plate, prism hump, a fast standard lens."""
+    root = _group(name, col, loc, rot_z)
+    chrome = M.metal(f"{name}_chrome", "#c8c9ca", rough=0.18, smudge=0.5, tarnish=0.1)
+    black = M.metal(f"{name}_black", "#161616", rough=0.35, smudge=0.4, tarnish=0.0)
+    skin = M.leather(f"{name}_skin", "#121212", rough=0.75, wear=0.5)
+    glass = M.glass(f"{name}_glass", "#cfd8ff", 0.0, 1.6, smudge=0.2)
+    w, d, h = 0.142, 0.036, 0.062
+    for o in (box(f"{name}_body", w, d, h, (0, 0, h / 2), skin, col, bevel=0.004),
+              box(f"{name}_top", w - 0.004, d + 0.002, 0.018, (0, 0, h + 0.009), chrome, col, bevel=0.003),
+              box(f"{name}_base", w - 0.004, d + 0.002, 0.006, (0, 0, 0.003), chrome, col, bevel=0.002)):
+        _parent(o, root)
+    prism = box(f"{name}_prism", 0.05, 0.042, 0.03, (0, 0.002, h + 0.03), chrome, col, bevel=0.004)
+    prism.scale = (1.0, 1.0, 1.0)
+    bm = bmesh.new()
+    bm.from_mesh(prism.data)
+    for v in bm.verts:   # taper the hump
+        if v.co.z > 0:
+            v.co.x *= 0.62
+            v.co.y *= 0.75
+    bm.to_mesh(prism.data)
+    bm.free()
+    _parent(prism, root)
+    for x, r_, hh in ((-0.05, 0.011, 0.007), (0.045, 0.013, 0.006), (0.058, 0.004, 0.012)):
+        k = cylinder(f"{name}_dial", r_, hh, (x, 0, h + 0.018), chrome, col, 32, bevel=0.001)
+        _parent(k, root)
+    lever = box(f"{name}_lever", 0.035, 0.008, 0.002, (0.052, 0.012, h + 0.026), chrome, col, bevel=0.0008)
+    lever.rotation_euler = (0, 0, math.radians(25))
+    _parent(lever, root)
+    # lens: mount ring, focus barrel, aperture ring, front element
+    zc = h / 2 + 0.002
+    for i, (r_, ln, m) in enumerate(((0.027, 0.006, chrome), (0.028, 0.022, black), (0.026, 0.008, chrome),
+                                     (0.0275, 0.012, black))):
+        y0 = -d / 2 - sum(x[1] for x in ((0.027, 0.006), (0.028, 0.022), (0.026, 0.008), (0.0275, 0.012))[:i])
+        c = cylinder(f"{name}_lens{i}", r_, ln, (0, y0, zc), m, col, 48, bevel=0.0008,
+                     rot=(math.radians(90), 0, 0))
+        _parent(c, root)
+    front = -d / 2 - 0.048
+    el = cylinder(f"{name}_element", 0.019, 0.002, (0, front + 0.001, zc), glass, col, 48,
+                  rot=(math.radians(90), 0, 0))
+    _parent(el, root)
+    return root
+
+
+def film_canister(name, col, loc, rot_z=0.0, label="#e3b23c", band="#b2312a"):
+    """A 35mm film cassette: printed label, steel caps, a tongue of film out of the felt slot."""
+    root = _group(name, col, loc, rot_z)
+    steel = M.metal(f"{name}_steel", "#a9abad", 0.3, 0.4, 0.1)
+    lab = M.plastic(f"{name}_label", label, 0.4, 0.3)
+    for o in (cylinder(f"{name}_shell", 0.0125, 0.046, (0, 0, 0.0035), lab, col, 32),
+              cylinder(f"{name}_band", 0.01255, 0.012, (0, 0, 0.02), M.plastic(f"{name}_band", band, 0.4, 0.3), col, 32),
+              cylinder(f"{name}_capb", 0.0128, 0.0035, (0, 0, 0.0), steel, col, 32, bevel=0.0006),
+              cylinder(f"{name}_capt", 0.0128, 0.0035, (0, 0, 0.0495), steel, col, 32, bevel=0.0006),
+              cylinder(f"{name}_spool", 0.004, 0.006, (0, 0, 0.053), steel, col, 16)):
+        _parent(o, root)
+    tongue = box(f"{name}_tongue", 0.0006, 0.022, 0.034, (0.0105, -0.012, 0.0265),
+                 M.plastic(f"{name}_film", "#5a2c16", 0.15, 0.6), col)
+    _parent(tongue, root)
+    return root
+
+
+def pocket_watch(name, col, loc, rot_z=0.0, rng=None):
+    """A gold pocket watch lying face up, its chain trailing off in a loose curl."""
+    rng = rng or random.Random(17)
+    root = _group(name, col, loc, rot_z)
+    gold = M.metal(f"{name}_gold", "#c9a24e", rough=0.15, smudge=0.5, tarnish=0.3)
+    case = lathe(f"{name}_case", [(0.0, 0.0), (0.019, 0.0), (0.0235, 0.003), (0.024, 0.006), (0.0225, 0.0095),
+                                  (0.0, 0.0095)], 64, gold, col)
+    _parent(case, root)
+    dial = cylinder(f"{name}_dial", 0.0205, 0.0004, (0, 0, 0.0092), M.ceramic(f"{name}_enamel", "#f2ecdc", 0.1, 0.1,
+                                                                            0.3), col, 64)
+    _parent(dial, root)
+    ink = M.metal(f"{name}_hands", "#1c1c22", 0.3, 0.1, 0.0)
+    for k in range(12):   # hour marks
+        a = k * math.pi / 6
+        mk = box(f"{name}_mark", 0.0008, 0.0026, 0.0002, (math.sin(a) * 0.0175, math.cos(a) * 0.0175, 0.0097), ink, col)
+        mk.rotation_euler = (0, 0, -a)
+        _parent(mk, root)
+    for ln, ang in ((0.011, rng.uniform(0, 6.28)), (0.016, rng.uniform(0, 6.28))):
+        hd = box(f"{name}_hand", 0.0009, ln, 0.0003, (math.sin(ang) * ln / 2, math.cos(ang) * ln / 2, 0.0099), ink, col)
+        hd.rotation_euler = (0, 0, -ang)
+        _parent(hd, root)
+    crystal = lathe(f"{name}_crystal", [(0.0, 0.0115), (0.012, 0.0108), (0.0205, 0.0095), (0.0, 0.0095)], 64,
+                    M.glass(f"{name}_crystal", "#ffffff", 0.0, 1.5, 0.3), col)
+    _parent(crystal, root)
+    crown = cylinder(f"{name}_crown", 0.003, 0.005, (0, 0.024, 0.005), gold, col, 24, rot=(math.radians(-90), 0, 0))
+    _parent(crown, root)
+    bow = _torus(f"{name}_bow", col, 0.006, 0.0011, (0, 0.033, 0.0012), mat=gold)
+    _parent(bow, root)
+    # chain: links along a lazy curve on the surface
+    pts = []
+    a = 0.0
+    p = Vector((0, 0.04, 0.0012))
+    for i in range(26):
+        a += rng.uniform(-0.25, 0.3)
+        p = p + Vector((math.sin(a) * 0.0055, math.cos(a) * 0.0055, 0))
+        pts.append((p.copy(), a))
+    for i, (q, ang) in enumerate(pts):
+        lk = _torus(f"{name}_link", col, 0.0024, 0.0005, q, rot=(math.radians(90) if i % 2 else 0, 0, -ang), mat=gold,
+                    seg=(12, 6))
+        _parent(lk, root)
+    return root
+
+
+def ink_bottle(name, col, loc, rot_z=0.0, ink="#14183a"):
+    """A squat glass ink bottle, ink line on the inside, a black screw cap."""
+    root = _group(name, col, loc, rot_z)
+    glass = M.glass(f"{name}_glass", "#eef3ee", 0.02, 1.5, 0.4)
+    btl = lathe(f"{name}_bottle", [(0.0, 0.0), (0.03, 0.0), (0.032, 0.004), (0.032, 0.036), (0.026, 0.044),
+                                   (0.013, 0.048), (0.013, 0.056), (0.0115, 0.056), (0.0115, 0.049), (0.024, 0.043),
+                                   (0.029, 0.036), (0.029, 0.006), (0.0, 0.006)], 64, glass, col)
+    _parent(btl, root)
+    fill = lathe(f"{name}_ink", [(0.0, 0.006), (0.0288, 0.006), (0.0288, 0.022), (0.0, 0.022)], 64,
+                 M.glass(f"{name}_inkliquid", ink, 0.05, 1.34, 0.0), col)
+    _parent(fill, root)
+    cap = cylinder(f"{name}_cap", 0.015, 0.014, (0, 0, 0.05), M.plastic(f"{name}_cap", "#121212", 0.35, 0.2), col, 48,
+                   bevel=0.001)
+    _parent(cap, root)
+    lab = lathe(f"{name}_label", [(0.03215, 0.012), (0.03215, 0.028)], 64,
+                M.paper(f"{name}_label", "#e8dcbc", 0.6, 0.5, ink_lines=True, line_color="#3a2a1a"), col, smooth=True)
+    _parent(lab, root)
+    return root
+
+
+def sealed_letter(name, col, loc, rot_z=0.0, wax="#7a1218"):
+    """An envelope face down, closed with a blob of sealing wax pressed with a seal."""
+    root = envelope(name, col, loc, rot_z)
+    wax_m = M.plastic(f"{name}_wax", wax, rough=0.35, coat=0.6)
+    blob = lathe(f"{name}_wax", [(0.0, 0.0), (0.012, 0.0), (0.0135, 0.0012), (0.012, 0.0024), (0.0085, 0.0028),
+                                 (0.0085, 0.0022), (0.0, 0.0022)], 40, wax_m, col)
+    rng = random.Random(len(name))
+    for v in blob.data.vertices:
+        r_ = math.hypot(v.co.x, v.co.y)
+        if r_ > 0.0105:
+            k = 1 + rng.uniform(-0.12, 0.18)
+            v.co.x *= k
+            v.co.y *= k
+    blob.location = (0.0, -0.02, 0.0012)
+    _parent(blob, root)
+    return root
+
+
+def radio(name, col, loc, rot_z=0.0, wood="walnut"):
+    """A 1950s mantel radio: veneered cabinet, cloth speaker grille, glass dial, two bakelite knobs."""
+    root = _group(name, col, loc, rot_z)
+    veneer = M.wood(f"{name}_veneer", wood, varnish=0.8, wear=0.3, scale=3.0, grain_axis="X")
+    cab = box(f"{name}_cabinet", 0.32, 0.15, 0.19, (0, 0, 0.095), veneer, col, bevel=0.018, segments=4)
+    _parent(cab, root)
+    grille = box(f"{name}_grille", 0.15, 0.004, 0.12, (-0.065, -0.074, 0.1),
+                 M.fabric(f"{name}_cloth", "#b39b72", threads_per_m=1200, rough=0.9, sheen=0.6, pattern="gingham",
+                          pattern_color="#8a7550", pattern_scale=40.0), col, bevel=0.002)
+    _parent(grille, root)
+    dial = box(f"{name}_dial", 0.11, 0.004, 0.05, (0.085, -0.074, 0.125), M.paper(f"{name}_dialface", "#e9dcb4", 0.4,
+                                                                                    0.4, ink_lines=True,
+                                                                                    line_color="#2a2a2a"), col)
+    _parent(dial, root)
+    gl = box(f"{name}_dialglass", 0.112, 0.002, 0.052, (0.085, -0.0775, 0.125), M.glass(f"{name}_glass", "#ffffff", 0.0,
+                                                                                        1.5, 0.3), col)
+    _parent(gl, root)
+    bak = M.plastic(f"{name}_bakelite", "#3a2414", 0.25, 0.6)
+    for x in (0.055, 0.115):
+        k = cylinder(f"{name}_knob", 0.012, 0.014, (x, -0.074, 0.055), bak, col, 32, bevel=0.003,
+                     rot=(math.radians(90), 0, 0))
+        _parent(k, root)
+    return root
+
+
+def kettle(name, col, loc, rot_z=0.0, color="#e8e2d4"):
+    """An enamel stovetop kettle with a black knob and a wire-and-wood handle."""
+    root = _group(name, col, loc, rot_z)
+    enamel = M.ceramic(f"{name}_enamel", color, rough=0.12, speckle=0.15, crazing=0.0)
+    body = lathe(f"{name}_body", [(0.0, 0.0), (0.085, 0.0), (0.095, 0.01), (0.097, 0.06), (0.085, 0.12),
+                                  (0.05, 0.15), (0.045, 0.155), (0.0, 0.155)], 64, enamel, col)
+    add_subsurf(body, 1, 2)
+    _parent(body, root)
+    knob = cylinder(f"{name}_knob", 0.012, 0.016, (0, 0, 0.155), M.plastic(f"{name}_knob", "#141414", 0.3), col, 24,
+                    bevel=0.004)
+    _parent(knob, root)
+    spout = cylinder(f"{name}_spout", 0.014, 0.12, (0.07, 0, 0.04), enamel, col, 24, radius2=0.008)
+    spout.rotation_euler = (0, math.radians(52), 0)
+    _parent(spout, root)
+    steel = M.metal(f"{name}_wire", "#bfc1c3", 0.3, 0.3, 0.1)
+    pts = [(-0.055 + 0.11 * k / 16, 0, 0.14 + 0.09 * math.sin(math.pi * k / 16)) for k in range(17)]
+    wire = _curve(f"{name}_handle", col, pts, 0.0022, steel)
+    _parent(wire, root)
+    grip = cylinder(f"{name}_grip", 0.009, 0.06, (-0.03, 0, 0.228), M.wood(f"{name}_grip", "walnut", 0.6, 0.3), col, 24,
+                    rot=(0, math.radians(90), 0))
+    _parent(grip, root)
+    return root
+
+
+def _curve(name, col, pts, radius, mat):
+    cu = bpy.data.curves.new(name, "CURVE")
+    cu.dimensions = "3D"
+    sp = cu.splines.new("POLY")
+    sp.points.add(len(pts) - 1)
+    for k, p in enumerate(pts):
+        sp.points[k].co = (p[0], p[1], p[2], 1)
+    cu.bevel_depth = radius
+    cu.bevel_resolution = 3
+    o = bpy.data.objects.new(name, cu)
+    link(o, col)
+    o.data.materials.append(mat)
+    return o
+
+
+def hurricane_lantern(name, col, loc, rot_z=0.0, lit=False):
+    """A paraffin hurricane lantern: rusty tank, glass globe, wire guard and bail handle. Returns (root, light)."""
+    root = _group(name, col, loc, rot_z)
+    tin = M.metal(f"{name}_tin", "#6d5a46", rough=0.6, smudge=0.6, tarnish=0.9)
+    tank = lathe(f"{name}_tank", [(0.0, 0.0), (0.07, 0.0), (0.075, 0.02), (0.065, 0.05), (0.03, 0.06), (0.0, 0.06)],
+                 48, tin, col)
+    _parent(tank, root)
+    globe = lathe(f"{name}_globe", [(0.03, 0.06), (0.055, 0.1), (0.06, 0.14), (0.045, 0.19), (0.032, 0.21)], 48,
+                  M.glass(f"{name}_globe", "#f4f0e4", 0.04, 1.5, 0.9), col)
+    sol = globe.modifiers.new("Thick", "SOLIDIFY")
+    sol.thickness = 0.002
+    _parent(globe, root)
+    top = lathe(f"{name}_top", [(0.0, 0.25), (0.045, 0.235), (0.05, 0.215), (0.03, 0.205), (0.0, 0.205)], 48, tin, col)
+    _parent(top, root)
+    for k in range(4):   # wire guard
+        a = k * math.pi / 2 + 0.4
+        pts = [(math.cos(a) * r_, math.sin(a) * r_, z) for r_, z in ((0.04, 0.06), (0.066, 0.1), (0.07, 0.14),
+                                                                      (0.055, 0.19), (0.04, 0.215))]
+        _parent(_curve(f"{name}_guard{k}", col, pts, 0.0016, tin), root)
+    bail = [(math.cos(t) * 0.075, 0, 0.25 + math.sin(t) * 0.07) for t in [math.pi * i / 16 for i in range(17)]]
+    _parent(_curve(f"{name}_bail", col, bail, 0.0018, tin), root)
+    light = None
+    if lit:
+        fl = lathe(f"{name}_flame", [(0.0, 0.085), (0.007, 0.095), (0.006, 0.11), (0.0, 0.13)], 24,
+                   M.flame(f"{name}_flame", 14.0), col)
+        _parent(fl, root)
+        ld = bpy.data.lights.new(f"{name}_light", "POINT")
+        ld.energy = 3.5
+        ld.shadow_soft_size = 0.01
+        from .world import kelvin_rgb
+        ld.color = kelvin_rgb(1900)
+        light = bpy.data.objects.new(f"{name}_light", ld)
+        link(light, col)
+        light.location = (0, 0, 0.105)
+        _parent(light, root)
+    return root, light
+
+
+def wristwatch(name, col, loc, rot_z=0.0):
+    """A man's watch lying face up, leather strap open."""
+    root = _group(name, col, loc, rot_z)
+    steel = M.metal(f"{name}_steel", "#c9cacb", 0.2, 0.4, 0.05)
+    case = cylinder(f"{name}_case", 0.018, 0.009, (0, 0, 0.003), steel, col, 48, bevel=0.0015)
+    _parent(case, root)
+    face = cylinder(f"{name}_face", 0.0155, 0.0004, (0, 0, 0.0121), M.ceramic(f"{name}_face", "#efe9dc", 0.1, 0.0, 0.0),
+                    col, 48)
+    _parent(face, root)
+    gl = lathe(f"{name}_glass", [(0.0, 0.0135), (0.0158, 0.0122), (0.0, 0.0122)], 48,
+               M.glass(f"{name}_glass", "#ffffff", 0.0, 1.5, 0.3), col)
+    _parent(gl, root)
+    ink = M.metal(f"{name}_hands", "#1c1c22", 0.3, 0.1, 0.0)
+    for ln, ang in ((0.008, 1.1), (0.012, 4.0)):
+        hd = box(f"{name}_hand", 0.0008, ln, 0.0002, (math.sin(ang) * ln / 2, math.cos(ang) * ln / 2, 0.0126), ink, col)
+        hd.rotation_euler = (0, 0, -ang)
+        _parent(hd, root)
+    strap = M.leather(f"{name}_strap", "#4a2c1a", 0.55, 0.6)
+    for s, ln in ((1, 0.075), (-1, 0.11)):
+        st = box(f"{name}_strap", 0.019, ln, 0.0028, (0, s * (0.017 + ln / 2), 0.0016), strap, col, bevel=0.0009)
+        _parent(st, root)
+    buckle = _torus(f"{name}_buckle", col, 0.009, 0.0009, (0, 0.093, 0.002), mat=steel, seg=(24, 8))
+    buckle.scale = (1.15, 0.7, 1)
+    _parent(buckle, root)
+    return root
+
+
+def loupe(name, col, loc, rot_z=0.0):
+    """A clear photographer's loupe standing on a print."""
+    root = _group(name, col, loc, rot_z)
+    clear = M.glass(f"{name}_body", "#f6f6f6", 0.08, 1.49, 0.3)
+    body = lathe(f"{name}_body", [(0.019, 0.0), (0.021, 0.0), (0.017, 0.032), (0.015, 0.032)], 48, clear, col)
+    _parent(body, root)
+    lens = cylinder(f"{name}_lens", 0.016, 0.004, (0, 0, 0.03), M.glass(f"{name}_lens", "#ffffff", 0.0, 1.55, 0.1),
+                    col, 48)
+    _parent(lens, root)
+    rim = cylinder(f"{name}_rim", 0.0172, 0.006, (0, 0, 0.031), M.plastic(f"{name}_rim", "#141414", 0.3), col, 48)
+    _parent(rim, root)
+    return root

@@ -176,6 +176,10 @@ def build(ctx: Ctx):
     if clutter > 0.55:
         P.newspaper("Newspaper", col, (-0.66, 0.38, rest_z(-0.66, 0.38, surf) + 0.0005),
                     math.radians(rng.uniform(70, 110)))
+    if clutter > 0.3:
+        # on the worktop behind: the kettle and a radio (soft shapes in the background)
+        P.kettle("Kettle", col, (0.85, Y1 - 0.34, 0.9), math.radians(rng.uniform(150, 210)))
+        P.radio("Radio", col, (1.55, Y1 - 0.36, 0.9), math.radians(rng.uniform(-8, 8)))
 
     ctx.sun_window = dict(centre=(X0, side["c"], (side["b"] + side["t"]) / 2), bottom=side["b"], top=side["t"],
                           along=(0, 1, 0), width=side["w"], panes=2, rows=2)
