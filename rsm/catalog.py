@@ -266,6 +266,37 @@ TIMES_OF_DAY = {
     "night": "Night",
 }
 
+@dataclass(frozen=True)
+class Mood(Option):
+    key: float = 0.0       # how bright the photo sits after exposure (0 = follow the time of day)
+    dark: bool = False     # replaces the daylight with its own lights
+
+
+MOODS: dict[str, Mood] = {m.id: m for m in [
+    Mood("natural", "Natural (time of day)", "Light from the window and the room's own lamps, set by the time "
+         "of day."),
+    Mood("low_key", "Low key: one hard light", "A single hard light from high on one side. Deep shadows; "
+         "everything it doesn't touch falls to black.", 0.07, True),
+    Mood("noir_blinds", "Noir: light through blinds", "Hard light through venetian blinds throws stripes "
+         "across the photo and the room. Classic film noir.", 0.075, True),
+    Mood("bare_bulb", "Bare bulb, swinging", "A bare bulb on a flex above the photo, swaying slowly so the "
+         "shadows move with it.", 0.08, True),
+    Mood("torch", "Torch in the dark", "Pitch dark. Someone beside the camera searches with a torch; the beam "
+         "cuts through the haze and finds the photo.", 0.06, True),
+    Mood("candle", "Single candle", "Only a candle just out of shot: warm, low and flickering.", 0.065, True),
+    Mood("tv_glow", "TV glow", "A television in a dark room: cold light that jumps and shifts with the "
+         "picture.", 0.06, True),
+    Mood("neon", "Neon through the window", "Magenta and cyan light from a neon sign outside, buzzing and "
+         "dropping out now and then.", 0.07, True),
+    Mood("police", "Police lights outside", "Red and blue lights flashing through the window in the dark.",
+         0.06, True),
+    Mood("lightning", "Storm with lightning", "Almost dark, then the room flashes white for an instant, twice.",
+         0.045, True),
+    Mood("moonlight", "Cold moonlight", "Hard, blue-white moonlight through the window, nothing else.",
+         0.055, True),
+    Mood("red_room", "Darkroom red", "One deep-red safelight. Everything else is gone.", 0.06, True),
+]}
+
 WEATHER = {
     "clear": "Clear",
     "hazy": "Hazy",

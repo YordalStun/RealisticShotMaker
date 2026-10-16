@@ -36,6 +36,9 @@ SECTIONS: dict[str, list[Field]] = {
         Field("scene.placement", "Photo placement", "combo", list(catalog.PLACEMENTS.items()), group="Where"),
         Field("scene.time_of_day", "Time of day", "combo", list(catalog.TIMES_OF_DAY.items()), group="Light",
               tip="Sets the sun height and colour. Evening and night switch the lamps on."),
+        Field("scene.mood", "Lighting mood", "combo", _opts(catalog.MOODS), group="Light",
+              tip="Natural follows the time of day. The other moods are darker, edgier setups with their own "
+                  "lights; they replace the daylight."),
         Field("scene.weather", "Weather", "combo", list(catalog.WEATHER.items()), group="Light"),
         Field("scene.light_shafts", "Light shafts (haze)", "slider", group="Light",
               tip="Haze in the air so sunbeams become visible. Adds render time."),

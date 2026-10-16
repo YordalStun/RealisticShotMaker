@@ -55,6 +55,7 @@ class SceneSpec:
     location: str = "study_desk"      # see catalog.LOCATIONS
     placement: str = "leaning"        # leaning | flat | pile
     time_of_day: str = "golden"       # morning | midday | golden | evening | night
+    mood: str = "natural"             # lighting mood, see catalog.MOODS (dark moods replace the daylight)
     weather: str = "clear"            # clear | hazy | overcast
     light_shafts: float = 0.45        # 0..1 volumetric haze so sunbeams show
     dust: float = 0.5                 # 0..1 floating dust in the air

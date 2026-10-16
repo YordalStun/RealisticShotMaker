@@ -51,6 +51,9 @@ def film_params(spec: ShotSpec) -> dict:
     # how bright the subject should sit: night stays dark and moody, daylight is brighter
     key = {"morning": 0.17, "midday": 0.18, "golden": 0.15, "evening": 0.1, "night": 0.065}.get(
         spec.scene.time_of_day, 0.15)
+    mood = catalog.MOODS.get(spec.scene.mood)
+    if mood is not None and mood.key > 0:
+        key = mood.key   # dark moods are exposed for the photo; the rest of the room stays dark
     return dict(
         key=key,
         exposure=lk.exposure,

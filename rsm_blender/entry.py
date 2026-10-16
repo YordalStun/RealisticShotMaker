@@ -55,8 +55,13 @@ def build_scene(job: dict):
     col = collection("RSM_Set")
     rng = random.Random(int(spec["scene"].get("seed", 7)))
     tod = spec["scene"].get("time_of_day", "golden")
+    from rsmb import moods
+    mood = spec["scene"].get("mood", "natural")
+    mood_cfg = moods.settings(mood)
+    if mood_cfg["night"]:
+        tod = "night"   # dark moods bring their own light
     ctx = Ctx(job=job, spec=spec, col=col, rng=rng, quality=res, work_dir=job["paths"]["work"],
-              lights_on=tod in ("evening", "night"))
+              lights_on=tod in ("evening", "night") and mood_cfg["lamps"] != "off")
     loc_id = spec["scene"].get("location", "study_desk")
     try:
         mod = importlib.import_module(f"rsmb.locations.{loc_id}")
@@ -87,7 +92,7 @@ def build_scene(job: dict):
         sun.rotation_quaternion = (-d_from).to_track_quat("-Z", "Y")
 
     # ---- atmosphere
-    shafts = float(spec["scene"].get("light_shafts", 0.4))
+    shafts = max(float(spec["scene"].get("light_shafts", 0.4)), mood_cfg["haze"])
     if spec["scene"].get("weather") == "hazy":
         shafts = min(1.0, shafts + 0.2)
     if shafts > 0.01 and res.get("volumetrics", True):
@@ -122,6 +127,11 @@ def build_scene(job: dict):
     camera_rig.animate_camera(cam, cam_spec, anchors, float(res["fps"]), int(res["frame_start"]),
                               int(res["frame_end"]), (sw, sh), float(job["framing_fill"]),
                               int(spec["scene"].get("seed", 7)) * 13 + 5, aspect)
+    if mood != "natural":
+        existing = [o for o in bpy.data.objects if o.type == "LIGHT"]
+        rig = moods.Rig(anchors, room.min, room.max, float(res["fps"]), int(res["frame_start"]), int(res["frame_end"]),
+                        int(spec["scene"].get("seed", 7)), ctx.sun_window, cam)
+        moods.apply(mood, rig, existing)
 
     render.configure(res, cam_spec, body, scene)
     res["exposure_stops"] = float(tp.get("exposure", 0.0))

@@ -47,6 +47,19 @@ PRESETS = {
                                 camera=dict(move="macro_cut", cut_at=0.4, cut_to="push_in", lens="vintage_prime",
                                             body="film_35", fstop=2.8),
                                 look=dict(grade="warm_nostalgia")),
+    "Noir case file": dict(scene=dict(location="investigation_board", placement="pinned", mood="noir_blinds",
+                                      light_shafts=0.4, dust=0.5),
+                           camera=dict(move="push_in", lens="vintage_prime", body="film_35", fstop=2.0),
+                           look=dict(grade="bleach_bypass")),
+    "Searching in the dark": dict(scene=dict(location="attic_trunk", placement="flat", mood="torch", dust=0.8),
+                                  camera=dict(move="handheld", lens="vintage_prime", body="film_16", fstop=1.8),
+                                  look=dict(grade="faded_film")),
+    "Storm night": dict(scene=dict(location="bedside_night", mood="lightning", dust=0.3),
+                        camera=dict(move="push_in", lens="cinema_soft", body="digital_cinema", fstop=1.8),
+                        look=dict(grade="cool_morning")),
+    "Interrogation bulb": dict(scene=dict(location="kitchen_table", mood="bare_bulb", dust=0.6),
+                               camera=dict(move="locked_off", lens="vintage_prime", body="film_35", fstop=2.8),
+                               look=dict(grade="bleach_bypass")),
     "Home movie": dict(scene=dict(location="mantelpiece", time_of_day="evening"),
                        camera=dict(move="handheld", lens="vintage_prime", body="super8", fstop=2.8),
                        look=dict(grade="faded_film")),
@@ -861,6 +874,7 @@ class MainWindow(QMainWindow):
         p = PRESETS.get(name)
         if not p:
             return
+        self.spec.scene.mood = "natural"   # a look without a mood goes back to daylight
         for section, values in p.items():
             obj = getattr(self.spec, section)
             for k, v in values.items():
