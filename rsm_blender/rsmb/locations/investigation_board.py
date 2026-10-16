@@ -76,12 +76,17 @@ def _fingerprint_mat(name="Fingerprint"):
     tc = n.new("ShaderNodeTexCoord")
     mp = n.new("ShaderNodeMapping", Scale=(1 / 0.009, 1 / 0.009, 1 / 0.009))   # print radius -> 1
     n.link(tc, "Object", mp, "Vector")
-    ridges = n.new("ShaderNodeTexWave", _wave_type="RINGS", Scale=2.6, Distortion=1.6, Detail=2.0)
-    n.link(mp, None, ridges, "Vector")
+    # a whorl: concentric ridges, a little off-centre and wobbly, fading out towards the edge of the print
+    whorl = n.vmath("ADD", mp, (0.18, -0.12, 0.0))
+    ridges = n.new("ShaderNodeTexWave", _wave_type="RINGS", _rings_direction="SPHERICAL", _wave_profile="SIN",
+                   Scale=1.6, Distortion=2.2, Detail=1.5)
+    n.link(whorl, None, ridges, "Vector")
     grad = n.new("ShaderNodeTexGradient", _gradient_type="SPHERICAL")
     n.link(mp, None, grad, "Vector")
-    r = n.math("MULTIPLY", n.math("GREATER_THAN", (ridges, "Fac"), 0.55), (grad, "Fac"))
-    n.link(n.math("MULTIPLY", r, 0.32), None, b, "Alpha")
+    ridge = n.ramp((ridges, "Fac"), [(0.45, (0, 0, 0)), (0.7, (1, 1, 1))])
+    edge = n.ramp((grad, "Fac"), [(0.0, (0, 0, 0)), (0.45, (1, 1, 1))])
+    r = n.math("MULTIPLY", (ridge, "Color"), (edge, "Color"))
+    n.link(n.math("MULTIPLY", r, 0.16), None, b, "Alpha")
     out = n.new("ShaderNodeOutputMaterial")
     n.link(b, None, out, "Surface")
     return mat
