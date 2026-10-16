@@ -25,14 +25,30 @@ def _print(p: Progress):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="rsm")
-    ap.add_argument("command", choices=["render", "still", "job", "regrade"])
-    ap.add_argument("file")
+    ap.add_argument("command", choices=["render", "still", "job", "regrade", "previews"])
+    ap.add_argument("file", nargs="?", default="")
+    ap.add_argument("--moves", default=None, help="previews: comma-separated moves (default: all missing)")
+    ap.add_argument("--seconds", type=float, default=None)
+    ap.add_argument("--fps", type=float, default=None)
+    ap.add_argument("--samples", type=int, default=None)
+    ap.add_argument("--dest", default=None, help="previews: folder to store them in")
     ap.add_argument("--blender", default=None)
     ap.add_argument("--at", type=float, default=0.5)
     ap.add_argument("--out", default=None, help="folder for the job (default: the spec's output folder)")
     a = ap.parse_args(argv)
 
     blender = a.blender or find_blender()[0]
+    if a.command == "previews":
+        from . import previews
+        if not blender:
+            print("Blender 4.5+ not found. Pass --blender PATH.")
+            return 2
+        moves = a.moves.split(",") if a.moves else previews.missing_moves()
+        kw = {k: v for k, v in dict(seconds=a.seconds, fps=a.fps, samples=a.samples).items() if v is not None}
+        done = previews.build(blender, moves, Path(a.dest) if a.dest else None,
+                              on_progress=lambda m, i, n, p: _print(p), **kw)
+        print("\nBuilt previews:", ", ".join(done) or "none")
+        return 0 if len(done) == len(moves) else 1
     if a.command == "regrade":
         job = Path(a.file)
     else:

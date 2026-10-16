@@ -381,6 +381,7 @@ GRADES = {
 
 RESOLUTIONS = {
     # id: (name, width, height)
+    "p480": ("480p 854×480", 854, 480),
     "preview": ("Preview 960×540", 960, 540),
     "hd1080": ("Full HD 1920×1080", 1920, 1080),
     "qhd1440": ("QHD 2560×1440", 2560, 1440),

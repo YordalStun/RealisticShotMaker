@@ -81,14 +81,30 @@ def build(ctx: Ctx):
     trunk_loc = Vector((0.15, 0.1, 0.0))
     tw, td, th = 0.9, 0.52, 0.46
     P.old_trunk("Trunk", col, tuple(trunk_loc), math.radians(-8), size=(tw, td, th), lid_open_deg=108)
-    inside_z = 0.25  # the trunk is half full of letters
-    stuff = M.paper("Letters", "#e3d6b8", rough=0.8, age=0.8, ink_lines=True, line_color="#3a3a5a")
-    box("TrunkFill", tw - 0.06, td - 0.06, inside_z - 0.02, (trunk_loc.x, trunk_loc.y, 0.015 + (inside_z - 0.02) / 2),
-        stuff, col).rotation_euler = (0, 0, math.radians(-8))
+    # the trunk is half full: an old blanket underneath, then a layer of tied letter bundles
+    base_z = 0.21
+    trunk_rot = math.radians(-8)
+    blanket = M.fabric("TrunkBlanket", "#5a4636", threads_per_m=700, rough=0.95, sheen=0.5)
+    box("TrunkFill", tw - 0.05, td - 0.05, base_z - 0.02, (trunk_loc.x, trunk_loc.y, 0.015 + (base_z - 0.02) / 2),
+        blanket, col).rotation_euler = (0, 0, trunk_rot)
     extras = ctx.job.get("extra_prints", [])
     fill = opt(ctx, "trunk_fill", "letters")
+    from mathutils import Matrix
+    rot = Matrix.Rotation(trunk_rot, 3, "Z")
+    tops = [base_z]
     if fill in ("letters", "mixed"):
-        P.letter_pile("TrunkLetters", col, (trunk_loc.x - 0.18, trunk_loc.y - 0.05, inside_z), count=6, rng=rng)
+        cols_, rows_ = 4, 3
+        for ix in range(cols_):
+            for iy in range(rows_):
+                if fill == "mixed" and (ix, iy) in ((2, 1), (3, 0)):
+                    continue  # leave room for loose photos
+                lx = (ix + 0.5) / cols_ * (tw - 0.1) - (tw - 0.1) / 2 + rng.uniform(-0.015, 0.015)
+                ly = (iy + 0.5) / rows_ * (td - 0.1) - (td - 0.1) / 2 + rng.uniform(-0.01, 0.01)
+                p = trunk_loc + rot @ Vector((lx, ly, 0))
+                _, top = P.letter_bundle(f"Bundle{ix}{iy}", col, (p.x, p.y, base_z), trunk_rot + rng.uniform(-0.07, 0.07),
+                                         count=rng.randint(8, 18), rng=rng)
+                tops.append(base_z + top)
+    inside_z = max(tops)
     if fill in ("photos", "mixed") and extras:
         scatter_prints(extras[-3:], col, Vector((trunk_loc.x + 0.2, trunk_loc.y + 0.05, inside_z)), 0.12, rng,
                        inside_z, prefix="LoosePrint")

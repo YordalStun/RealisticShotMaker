@@ -769,3 +769,31 @@ def old_trunk(name, col, loc, rot_z=0.0, size=(0.9, 0.5, 0.45), lid_open_deg=105
         s = box(f"{name}_strap", 0.04, 0.004, h - 0.02, (sx * w, -d / 2 - 0.002, h / 2), strap, col, bevel=0.001)
         _parent(s, root)
     return root
+
+
+def letter_bundle(name, col, loc, rot_z=0.0, count=12, rng=None, string_color="#8a6a4a"):
+    """A stack of old envelopes tied crosswise with string, as people keep letters."""
+    rng = rng or random.Random(6)
+    root = _group(name, col, loc, rot_z)
+    tones = ["#e8dcc0", "#efe8d8", "#d9c9a8", "#c9b9a0", "#e2d2b0", "#d4c6ad"]
+    z = 0.0
+    w, h = 0.162, 0.114
+    for i in range(count):
+        e = envelope(f"{name}_{i}", col, (rng.uniform(-0.004, 0.004), rng.uniform(-0.004, 0.004), z),
+                     rng.uniform(-0.05, 0.05), color=rng.choice(tones), handwriting=(i == count - 1))
+        e.parent = root
+        z += 0.0013
+    twine = M.fabric(f"{name}_twine", string_color, threads_per_m=3000, rough=0.9, sheen=0.4)
+    t = 0.0016
+    # one loop along the length and one across, wrapping over the top and down the sides
+    for (sx, sy) in ((w + 0.004, t), (t, h + 0.004)):
+        top = box(f"{name}_twineTop", sx, sy, t, (0, 0, z + t / 2), twine, col)
+        _parent(top, root)
+    for (dx, dy, sx, sy) in ((w / 2 + 0.002, 0, t, t), (-w / 2 - 0.002, 0, t, t), (0, h / 2 + 0.002, t, t),
+                             (0, -h / 2 - 0.002, t, t)):
+        side = box(f"{name}_twineSide", sx, sy, z, (dx, dy, z / 2), twine, col)
+        _parent(side, root)
+    # a small knot where the strings cross
+    knot = cylinder(f"{name}_knot", 0.004, 0.003, (0.0, 0.0, z + t), twine, col, 16, bevel=0.001)
+    _parent(knot, root)
+    return root, z + t

@@ -18,6 +18,7 @@ from .. import __version__, catalog
 from ..blender_locator import download_blender, find_blender
 from ..spec import ShotSpec
 from .fields import SECTIONS, Field, get_attr, set_attr
+from .preview_popup import MoveHoverWatcher, PreviewPopup
 from .widgets import ColorButton, FolderPicker, ImageView, PhotoPicker, SliderField
 from .workers import JobThread, PolaroidPreview, RenderJob
 
@@ -50,6 +51,8 @@ PRESETS = {
 
 
 class _Bridge(QObject):
+    preview_progress = Signal(str)
+    previews_done = Signal(list)
     blender_found = Signal(str, str)
     download_progress = Signal(float, str)
     download_done = Signal(str, str)
@@ -90,6 +93,12 @@ class MainWindow(QMainWindow):
         self.bridge.download_done.connect(self._on_download_done)
 
         self._build_ui()
+        self.preview_popup = PreviewPopup()
+        for key in ("camera.move", "camera.cut_to"):
+            MoveHoverWatcher(self.widgets[key], self.preview_popup)
+        self.bridge.preview_progress.connect(lambda m: self.blender_label.setText(m))
+        self.bridge.previews_done.connect(self._previews_done)
+        self._preview_build_running = False
         self._load_into_widgets()
         self._schedule_polaroid_preview()
         QTimer.singleShot(200, self._locate_blender)
@@ -123,6 +132,8 @@ class MainWindow(QMainWindow):
         bm = menu.addMenu("&Blender")
         bm.addAction(QAction("Find Blender…", self, triggered=self.choose_blender))
         bm.addAction(QAction("Download Blender 4.5 LTS", self, triggered=self.download_blender))
+        bm.addSeparator()
+        bm.addAction(QAction("Build shot previews…", self, triggered=self.build_previews))
         hm = menu.addMenu("&Help")
         hm.addAction(QAction("About", self, triggered=self.about))
 
@@ -513,6 +524,34 @@ class MainWindow(QMainWindow):
             self._on_blender_found(exe, "4.5")
         else:
             QMessageBox.warning(self, "Download failed", err)
+
+    def build_previews(self):
+        """Render the hover preview clip of every camera move on this PC's graphics card (once)."""
+        from .. import previews
+        if not self._need_blender() or self._preview_build_running:
+            return
+        missing = previews.missing_moves()
+        moves = missing or list(catalog.MOVES)
+        msg = (f"Render {len(moves)} preview clips (5 s, 480p, 256 samples each) on your graphics card? "
+               "This runs in the background; on a fast card expect roughly an hour.")
+        if QMessageBox.question(self, "Build shot previews", msg) != QMessageBox.Yes:
+            return
+        self._preview_build_running = True
+        blender = self.blender
+
+        def work():
+            def prog(move, i, n, p):
+                name = catalog.option_name(catalog.MOVES, move)
+                self.bridge.preview_progress.emit(
+                    f"Building shot previews: {name} ({i + 1}/{n}), frame {p.done}/{p.total or '?'}")
+            done = previews.build(blender, moves, on_progress=prog)
+            self.bridge.previews_done.emit(done)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _previews_done(self, done: list):
+        self._preview_build_running = False
+        self.preview_popup.forget()
+        self.blender_label.setText(f"Shot previews ready ({len(done)} built). Hover over a camera move to play one.")
 
     def _need_blender(self) -> bool:
         if self.blender and os.path.exists(self.blender):

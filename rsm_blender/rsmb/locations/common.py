@@ -221,11 +221,102 @@ def outdoor_backdrop(col, centre: Vector, facing: Vector, rng: random.Random, di
 # Instant prints
 # ---------------------------------------------------------------------------
 
-def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: float = 18.0, lift=0.0005):
+_NOT_A_SURFACE = ("Haze", "DustMotes", "Steam", "Portal", "Fairy", "Cobweb", "String")
+
+
+def surface_z(x: float, y: float, near_z: float, reach: float = 0.15) -> float | None:
+    """Height of the highest solid surface under (x, y), searching down from near_z + reach.
+    Lets loose objects rest on whatever is really there (a runner, a letter, another print)."""
+    scene = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+    origin = Vector((x, y, near_z + reach))
+    down = Vector((0, 0, -1))
+    travelled = 0.0
+    limit = reach + 0.25
+    for _ in range(12):
+        hit, loc, _n, _i, obj, _m = scene.ray_cast(dg, origin, down, distance=limit - travelled)
+        if not hit:
+            return None
+        if obj is not None and any(k in obj.name for k in _NOT_A_SURFACE):
+            travelled += (origin.z - loc.z) + 1e-4
+            origin = loc + down * 1e-4
+            continue
+        return loc.z
+    return None
+
+
+def _flat_footprint(meta, where: Vector, yaw: float, inset: float = 0.9):
+    """Sample points (centre, corners, edge midpoints) of a print lying flat, centred on `where`."""
+    w, h = card_size(meta)
+    rot = Matrix.Rotation(yaw, 3, "Z")
+    pts = []
+    for fx, fy in ((0, 0), (-1, -1), (1, -1), (1, 1), (-1, 1), (0, -1), (0, 1), (-1, 0), (1, 0)):
+        pts.append(where + rot @ Vector((fx * w / 2 * inset, fy * h / 2 * inset, 0)))
+    return pts
+
+
+def _support_plane(pts, zs, max_tilt_deg: float = 22.0):
+    """Plane the print settles on: least-squares fit through the surface heights under it, lifted so no
+    point is below it (it rests on the highest bumps), tilt capped to something believable.
+    Returns ((x, y, z) at the footprint centre, unit normal)."""
+    n_ = len(pts)
+    sx = sum(p.x for p in pts) / n_
+    sy = sum(p.y for p in pts) / n_
+    sz = sum(zs) / n_
+    sxx = sum((p.x - sx) ** 2 for p in pts)
+    syy = sum((p.y - sy) ** 2 for p in pts)
+    sxy = sum((p.x - sx) * (p.y - sy) for p in pts)
+    sxz = sum((p.x - sx) * (z - sz) for p, z in zip(pts, zs))
+    syz = sum((p.y - sy) * (z - sz) for p, z in zip(pts, zs))
+    det = sxx * syy - sxy * sxy
+    if abs(det) < 1e-12:
+        b = c = 0.0
+    else:
+        b = (sxz * syy - syz * sxy) / det
+        c = (syz * sxx - sxz * sxy) / det
+    slope = math.hypot(b, c)
+    cap = math.tan(math.radians(max_tilt_deg))
+    if slope > cap:
+        b, c = b * cap / slope, c * cap / slope
+    # lift so every sampled point lies on or below the card
+    a = sz + max(z - (sz + b * (p.x - sx) + c * (p.y - sy)) for p, z in zip(pts, zs))
+    normal = Vector((-b, -c, 1.0)).normalized()
+    return (sx, sy, a), normal
+
+
+def footprint_heights(meta, where: Vector, yaw: float) -> list[float]:
+    bpy.context.view_layer.update()
+    out = []
+    for p in _flat_footprint(meta, where, yaw):
+        z = surface_z(p.x, p.y, where.z)
+        out.append(where.z if z is None else z)
+    return out
+
+
+def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: float = 18.0, lift=0.0005,
+               settle: bool = True):
     """Place a print. mode: leaning | flat. yaw rotates around Z (0 = facing -Y).
+    Flat prints settle onto whatever is under them (table, runner, letters, other prints).
     Returns (obj, picture_centre_world, normal_world)."""
+    where = where.copy()
+    support = None
+    if mode == "flat" and settle:
+        pts = _flat_footprint(meta, where, yaw)
+        zs = footprint_heights(meta, where, yaw)
+        support = _support_plane(pts, zs)
+        where.z = max(zs)
     obj = build_card(meta, name, col)
-    if mode == "flat":
+    if mode == "flat" and support is not None and support[1].z < 0.9999:
+        # rest on the highest points underneath, tipping like a real print would
+        (cx, cy, cz), n = support
+        w, h = card_size(meta)
+        base = Euler((math.radians(-90), 0, yaw), "XYZ").to_matrix()
+        tilt = Vector((0, 0, 1)).rotation_difference(n).to_matrix()
+        rot = tilt @ base
+        thick = lift + float(meta.get("thickness_mm", 1.0)) / 1000.0
+        centre_world = Vector((cx, cy, cz)) + n * thick
+        obj.matrix_world = Matrix.Translation(centre_world - rot @ Vector((0, 0, h / 2))) @ rot.to_4x4()
+    elif mode == "flat":
         obj.rotation_euler = Euler((math.radians(-90), 0, yaw), "XYZ")
         obj.location = where + Vector((0, 0, lift + float(meta.get("thickness_mm", 1.0)) / 1000.0))
         # card origin is the bottom edge; when flat it extends along +Y (rotated); centre it on `where`
@@ -243,22 +334,35 @@ def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: 
 
 def scatter_prints(metas, col, centre: Vector, radius: float, rng: random.Random, base_z: float, prefix="Extra",
                    avoid: Vector | None = None, avoid_r: float = 0.0, stack=False):
-    """Lay other prints around (or under) the hero."""
+    """Lay other prints around (or under) the hero, the way they'd really fall: each one rests flat on
+    what's below it. Loose prints prefer spots where they can lie flat instead of propping on an edge."""
     objs = []
     z = base_z
     for i, meta in enumerate(metas):
-        for _ in range(20):
+        best = None
+        for attempt in range(30):
             if stack:
                 p = centre + Vector((rng.uniform(-radius, radius), rng.uniform(-radius, radius), 0))
             else:
                 a = rng.uniform(0, 2 * math.pi)
                 d = rng.uniform(radius * 0.35, radius)
                 p = centre + Vector((math.cos(a) * d, math.sin(a) * d, 0))
-            if avoid is None or (p - avoid).length > avoid_r:
+            if avoid is not None and (p - avoid).length <= avoid_r:
+                continue
+            p.z = z if stack else base_z
+            yaw = rng.uniform(-0.6, 0.6) if stack else rng.uniform(-math.pi, math.pi)
+            if stack:
+                best = (p, yaw)
                 break
-        p.z = z
-        o, _, _ = place_card(meta, f"{prefix}{i}", col, p, rng.uniform(-math.pi, math.pi) if not stack else rng.uniform(-0.6, 0.6),
-                             "flat")
+            zs = footprint_heights(meta, p, yaw)
+            spread = max(zs) - min(zs)
+            if best is None or spread < best[2]:
+                best = (p, yaw, spread)
+            if spread < 0.0015:  # lies flat here: on the table, the runner, or squarely on another print
+                break
+        if best is None:
+            continue
+        o, _, _ = place_card(meta, f"{prefix}{i}", col, best[0], best[1], "flat", settle=not stack)
         objs.append(o)
         if stack:
             z += float(meta.get("thickness_mm", 1.0)) / 1000.0 + 0.0003

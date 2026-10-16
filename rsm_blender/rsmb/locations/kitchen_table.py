@@ -103,7 +103,7 @@ def build(ctx: Ctx):
     # linen runner down the middle
     runner = M.fabric("Runner", "#e9e2d0", threads_per_m=1400, rough=0.9, sheen=0.4, pattern="stripe",
                       pattern_color="#a64a3c", pattern_scale=9.0)
-    box("TableRunner", 1.9, 0.36, 0.002, (0, 0.42, TABLE_Z + 0.001), runner, col)
+    _runner(col, runner, 1.55, 0.36, (0, 0.42, TABLE_Z))
     surf = TABLE_Z
 
     # ------------------------------------------------------------------ hero print
@@ -261,4 +261,35 @@ def _toast(col, at: Vector, rng):
     o.rotation_euler = (0, 0, rng.uniform(0, 6.28))
     from ..util import add_bevel
     add_bevel(o, 0.002, 2, 40)
+    return o
+
+
+def _runner(col, mat, length, width, at):
+    """A linen runner lying on the table: real thickness, soft wrinkles, stays on the table top."""
+    import bpy
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=160, y_subdivisions=40, size=1.0, location=(at[0], at[1], at[2]))
+    o = bpy.context.object
+    o.name = "TableRunner"
+    for c in o.users_collection:
+        c.objects.unlink(o)
+    col.objects.link(o)
+    o.scale = (length, width, 1.0)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    # gentle wrinkles that only ever lift the cloth (never push it into the table)
+    tex = bpy.data.textures.new("RunnerWrinkles", "CLOUDS")
+    tex.noise_scale = 0.06
+    tex.noise_depth = 2
+    disp = o.modifiers.new("Wrinkles", "DISPLACE")
+    disp.texture = tex
+    disp.texture_coords = "GLOBAL"
+    disp.direction = "Z"
+    disp.mid_level = 0.0
+    disp.strength = 0.0025
+    sol = o.modifiers.new("Thickness", "SOLIDIFY")
+    sol.thickness = 0.0016
+    sol.offset = 1.0
+    o.location.z = at[2] + 0.0002
+    for poly in o.data.polygons:
+        poly.use_smooth = True
+    o.data.materials.append(mat)
     return o

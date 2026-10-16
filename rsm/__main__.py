@@ -9,7 +9,7 @@ def main():
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
-    if len(sys.argv) > 1 and sys.argv[1] in ("render", "still", "job", "regrade"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("render", "still", "job", "regrade", "previews"):
         from .cli import main as cli_main
         return cli_main(sys.argv[1:])
     from .gui.app import main as gui_main
