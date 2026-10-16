@@ -203,13 +203,13 @@ def build(ctx: Ctx):
         bevel=0.0015)
     box("AlbumCoverR", pw + 0.012, pd + 0.014, board, (ax + (pw + 0.012) / 2 + 0.004, ay, z0 + board / 2), cover, col,
         bevel=0.0015)
-    spine = cylinder("AlbumSpine", 0.012, pd + 0.014, (ax, ay - (pd + 0.014) / 2, z0 + 0.004), cover, col, 24,
+    spine = cylinder("AlbumSpine", 0.012, pd + 0.014, (ax, ay - (pd + 0.014) / 2, z0 + 0.0015), cover, col, 24,
                      rot=(math.radians(-90), 0, 0))
-    spine.scale = (1.0, 0.45, 1.0)
+    spine.scale = (1.0, 0.25, 1.0)
     pz = z0 + board
-    _page_block("AlbumPagesL", col, ax - pw - 0.002, ax - 0.002, ay - pd / 2, ay + pd / 2, pz, thick, ax, page_mat,
+    _page_block("AlbumPagesL", col, ax - pw - 0.0003, ax - 0.0003, ay - pd / 2, ay + pd / 2, pz, thick, ax, page_mat,
                 edge_mat)
-    _page_block("AlbumPagesR", col, ax + 0.002, ax + pw + 0.002, ay - pd / 2, ay + pd / 2, pz, thick, ax, page_mat,
+    _page_block("AlbumPagesR", col, ax + 0.0003, ax + pw + 0.0003, ay - pd / 2, ay + pd / 2, pz, thick, ax, page_mat,
                 edge_mat)
     bpy.context.view_layer.update()
     top_z = pz + thick
@@ -221,7 +221,8 @@ def build(ctx: Ctx):
     placement = "flat" if s.get("placement") == "flat" else "mounted"
     caps = CAPTIONS[:]
     rng.shuffle(caps)
-    hero_caption = (ctx.spec.get("polaroid", {}).get("caption") or "").strip() or caps.pop()
+    # the album caption adds to what's on the print rather than repeating it
+    hero_caption = caps.pop()
     slots = []
     for side_sign in (-1, 1):
         for row_y in (0.082, -0.073):
