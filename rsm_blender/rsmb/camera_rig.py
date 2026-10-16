@@ -246,36 +246,36 @@ def make_move(move: str, a: Anchors, D: float, amount: float):
 
 
 class FocusPuller:
-    """Follows the target focus distance like a human: slight lag, a little overshoot on fast pulls,
-    and tiny drift."""
+    """Follows the target focus distance like a good human focus puller: he has rehearsed the move, so he
+    tracks its speed as well as its position (no lag on smooth moves), overshoots a touch on sudden racks
+    and drifts very slightly while holding."""
 
     def __init__(self, seed: int, skill_noise: float):
         self.noise = Noise1D(seed + 991)
         self.amount = skill_noise
         self.pos = None
         self.vel = 0.0
+        self.prev_target = None
 
     def step(self, target: float, dt: float, t: float) -> float:
-        if self.pos is None:
+        xt = 1.0 / max(target, 1e-3)      # work in diopters, which is how a focus ring behaves
+        vt = 0.0 if self.prev_target is None else (xt - self.prev_target) / dt
+        self.prev_target = xt
+        if self.pos is None or self.amount <= 0:
             self.pos = target
+            self.vel = vt
             return target
-        if self.amount <= 0:
-            self.pos = target
-            return target
-        # under-damped spring towards the target (in diopters, which is how focus throw behaves)
-        omega = 9.0 / (0.35 + self.amount)
+        omega = 16.0 / (0.4 + self.amount)
         zeta = 0.62
         x, v = 1.0 / self.pos, self.vel
-        xt = 1.0 / target
-        acc = omega * omega * (xt - x) - 2 * zeta * omega * v
         steps = 8
         h = dt / steps
         for _ in range(steps):
-            acc = omega * omega * (xt - x) - 2 * zeta * omega * v
+            acc = omega * omega * (xt - x) + 2 * zeta * omega * (vt - v)
             v += acc * h
             x += v * h
         self.vel = v
-        drift = self.noise.fbm(t * 0.35, 3) * 0.006 * self.amount
+        drift = self.noise.fbm(t * 0.35, 3) * 0.0012 * self.amount  # a good focus puller holds within the DoF
         self.pos = 1.0 / max(1e-3, x * (1 + drift))
         return self.pos
 
@@ -444,6 +444,7 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         if frame == cut_frame:
             puller.pos = None  # a new shot: the focus is simply set, not pulled
             puller.vel = 0.0
+            puller.prev_target = None
         loc, q, target_dist = solve(fn(t), time_s, prev_q)
         prev_q = q
         cam_obj.location = loc

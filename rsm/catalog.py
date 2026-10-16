@@ -227,8 +227,8 @@ TIMES_OF_DAY = {
 }
 
 WEATHER = {
-    "clear": "Clear sun",
-    "hazy": "Hazy sun",
+    "clear": "Clear",
+    "hazy": "Hazy",
     "overcast": "Overcast",
 }
 

@@ -149,9 +149,11 @@ shader rsm_lens(output point position = 0.0,
 
   // ---- focus surface --------------------------------------------------------
   float fd_eff = fd;
-  fd_eff *= 1.0 + FIELD_CURV * 0.03 * rn * rn;            // field curvature
-  fd_eff *= 1.0 + CA_LONG * lam * 0.004;                   // longitudinal colour
-  fd_eff *= 1.0 - SPHERICAL * 0.012 * (rho * rho - 0.5);  // spherical aberration
+  // Calibrated against the depth of field at 4K: at the focus plane these stay within about a
+  // pixel, out of focus they shape the bokeh (fringes, glow, field-dependent softness).
+  fd_eff *= 1.0 + FIELD_CURV * 0.012 * rn * rn;           // field curvature: corners focus slightly behind
+  fd_eff *= 1.0 + CA_LONG * lam * 0.0012;                  // longitudinal colour
+  fd_eff *= 1.0 - SPHERICAL * 0.0025 * (rho * rho - 0.5); // spherical aberration
 
   point Pf = d * (fd_eff / d[2]);
   point L = point(lx * ap, ly * ap, 0.0);

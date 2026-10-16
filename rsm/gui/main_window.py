@@ -384,6 +384,11 @@ class MainWindow(QMainWindow):
                 if self.spec.scene.placement not in loc.placements:
                     self.spec.scene.placement = loc.placements[0]
             self._load_into_widgets()
+        if f.path == "camera.framing":
+            # like a DP changing lenses: wider framings get wider lenses (the user can still override)
+            self.spec.camera.focal_mm = {"extreme_close": 100.0, "close": 85.0, "medium": 50.0, "wide": 35.0}.get(
+                value, self.spec.camera.focal_mm)
+            self._load_into_widgets()
         if f.path == "camera.move":
             mv = catalog.MOVES.get(value)
             if mv:
