@@ -3,8 +3,12 @@ name: Build Windows app
 on:
   push:
     branches: ["**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+
+env:
+  BLENDER_VERSION: "4.5.4"
 
 jobs:
   test:
@@ -26,6 +30,8 @@ jobs:
   windows:
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write   # to attach the downloads to a GitHub release when a v* tag is pushed
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,13 +54,105 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "frozen app exited with code $($p.ExitCode)" }
           if (-not (Get-ChildItem smoke_out -Recurse -Filter job.json)) { throw "job.json was not created" }
           if (-not (Get-ChildItem smoke_out -Recurse -Filter hero_color.png)) { throw "print textures were not created" }
+
+      # ---------------------------------------------------------------- all-in-one: bundle Blender
+      - name: Cache the Blender download
+        uses: actions/cache@v4
+        with:
+          path: blender_dl
+          key: blender-${{ env.BLENDER_VERSION }}-windows-x64
+      - name: Download Blender ${{ env.BLENDER_VERSION }} LTS
+        shell: pwsh
+        run: |
+          $zip = "blender_dl\blender-$env:BLENDER_VERSION-windows-x64.zip"
+          if (-not (Test-Path $zip)) {
+            New-Item -ItemType Directory -Force blender_dl | Out-Null
+            $major = ($env:BLENDER_VERSION -split '\.')[0..1] -join '.'
+            $url = "https://download.blender.org/release/Blender$major/blender-$env:BLENDER_VERSION-windows-x64.zip"
+            Write-Host "Downloading $url"
+            Invoke-WebRequest -Uri $url -OutFile $zip
+          }
+          7z x $zip -oblender_unpacked -y | Out-Null
+          $inner = Get-ChildItem blender_unpacked -Directory | Select-Object -First 1
+          Move-Item $inner.FullName "dist\RealisticShotMaker\blender"
+          & "dist\RealisticShotMaker\blender\blender.exe" -b --factory-startup --version
+      - name: Render test with the bundled Blender (CPU, tiny)
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          $spec = @{
+            camera = @{ move = "push_in"; duration = 0.25 }
+            scene  = @{ dust = 0; light_shafts = 0 }
+            output = @{ resolution = "p360"; fps = 12; custom_samples = 4; codec = "h264"; name = "smoke" }
+          } | ConvertTo-Json -Depth 4
+          Set-Content -Path smoke_render.rsm.json -Value $spec
+          $p = Start-Process -FilePath "dist\RealisticShotMaker\RealisticShotMaker.exe" `
+                 -ArgumentList "render","smoke_render.rsm.json","--out","smoke_render" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "render exited with code $($p.ExitCode)" }
+          $mp4 = Get-ChildItem smoke_render -Recurse -Filter smoke.mp4 | Select-Object -First 1
+          if (-not $mp4) { throw "no video was produced" }
+          Write-Host "Rendered $($mp4.FullName) ($([math]::Round($mp4.Length / 1KB)) KB)"
+
+      # ---------------------------------------------------------------- packages
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = python -c "import rsm; print(rsm.__version__)"
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - name: Portable package (zip + self-extracting exe)
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Force portable | Out-Null
+          Copy-Item -Recurse "dist\RealisticShotMaker" "portable\RealisticShotMaker"
+          Set-Content -Path "portable\RealisticShotMaker\portable.txt" -Value @"
+          RealisticShotMaker portable edition.
+          Settings, the render queue and drafts are kept in the 'data' folder here,
+          and renders go to the 'Renders' folder, so nothing is written to the PC.
+          Delete this file to make the program use the normal Windows folders instead.
+          "@
+          Push-Location portable
+          7z a -tzip -mx=5 "..\dist\RealisticShotMaker-Portable-$v.zip" RealisticShotMaker | Out-Null
+          # one double-clickable exe: asks where to unpack, then you run RealisticShotMaker.exe from there
+          7z a -t7z -mx=7 -m0=lzma2 -mmt=on "..\portable.7z" RealisticShotMaker | Out-Null
+          Pop-Location
+          $sfx = "C:\Program Files\7-Zip\7z.sfx"
+          if (Test-Path $sfx) {
+            $exe = Join-Path $PWD "dist\RealisticShotMaker-Portable-$v.exe"
+            $out = [IO.File]::Create($exe)
+            foreach ($part in @($sfx, (Join-Path $PWD "portable.7z"))) {
+              $in = [IO.File]::OpenRead($part); $in.CopyTo($out); $in.Close()
+            }
+            $out.Close()
+          } else {
+            Write-Host "7z.sfx not found; skipping the self-extracting exe"
+          }
+          Get-ChildItem dist -File | Format-Table Name, @{n="MB";e={[math]::Round($_.Length / 1MB)}}
       - name: Build installer
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\installer.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} packaging\installer.iss
       - uses: actions/upload-artifact@v4
         with:
-          name: RealisticShotMaker-Windows
+          name: RealisticShotMaker-Portable
           path: |
+            dist/RealisticShotMaker-Portable-*.zip
+            dist/RealisticShotMaker-Portable-*.exe
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RealisticShotMaker-Installer
+          path: dist/RealisticShotMaker-Setup-*.exe
+          compression-level: 0
+          retention-days: 14
+      - name: Attach to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/RealisticShotMaker-Portable-*.zip
+            dist/RealisticShotMaker-Portable-*.exe
             dist/RealisticShotMaker-Setup-*.exe

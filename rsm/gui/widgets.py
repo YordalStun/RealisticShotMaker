@@ -179,4 +179,6 @@ class FolderPicker(QWidget):
             self.changed.emit(d)
 
     def set_value(self, v: str):
-        self.label.setText(v or "Videos\\RealisticShotMaker (default)")
+        from ..paths import default_output_dir, is_portable
+        self.label.setText(v or ("Renders folder next to the program (default)" if is_portable()
+                                 else "Videos\\RealisticShotMaker (default)"))

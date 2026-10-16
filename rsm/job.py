@@ -106,7 +106,8 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
               progress=lambda msg: None) -> Path:
     """Generate textures and write job.json. Returns the job file path."""
     out = spec.output
-    root = Path(work_root or out.output_dir or (Path.home() / "Videos" / "RealisticShotMaker"))
+    from .paths import default_output_dir
+    root = Path(work_root or out.output_dir or default_output_dir())
     stamp = time.strftime("%Y%m%d-%H%M%S")
     job_dir = root / f"{out.name or 'shot'}_{stamp}"
     work = job_dir / "work"

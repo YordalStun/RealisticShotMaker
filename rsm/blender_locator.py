@@ -12,16 +12,11 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from .paths import app_data_dir, bundled_blender  # noqa: F401  (app_data_dir kept here for older imports)
+
 RECOMMENDED = "4.5.4"
 MIN_VERSION = (4, 5)  # the custom lens needs Blender 4.5+ (OSL custom cameras)
 DOWNLOAD_URL = "https://download.blender.org/release/Blender{major}/blender-{ver}-windows-x64.zip"
-
-
-def app_data_dir() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    d = Path(base) / "RealisticShotMaker"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def _version_of(exe: str) -> tuple[int, int, int] | None:
@@ -42,6 +37,9 @@ def candidates() -> list[str]:
     env = os.environ.get("RSM_BLENDER")
     if env:
         found.append(env)
+    own = bundled_blender()          # the all-in-one package carries its own Blender
+    if own is not None:
+        found.append(str(own))
     found += sorted(glob.glob(str(app_data_dir() / "blender" / "*" / "blender.exe")), reverse=True)
     found += sorted(glob.glob(str(app_data_dir() / "blender" / "*" / "blender")), reverse=True)
     if sys.platform == "win32":

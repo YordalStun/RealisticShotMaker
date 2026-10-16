@@ -49,11 +49,24 @@ Cycles renderer and rendered out to 4K or 8K video.
 
 ## Installing
 
-1. Run `RealisticShotMaker-Setup.exe` (built by the GitHub Actions workflow;
-   download it from the workflow run's artifacts).
-2. Start the program. It looks for **Blender 4.5 or newer**. If it can't find
-   it, use **Blender → Download Blender 4.5 LTS** and it fetches the portable
-   build from blender.org (about 400 MB) into your user folder.
+Everything is in one package: the program, **Blender 4.5 LTS** and ffmpeg.
+Nothing else to download. The GitHub Actions workflow builds three versions
+(download them from the workflow run's artifacts, or from Releases for
+tagged versions):
+
+| Download | What it is |
+| --- | --- |
+| `RealisticShotMaker-Portable-x.y.z.exe` | **Portable, one file.** Double-click it, choose a folder (a USB stick works), then run `RealisticShotMaker.exe` inside. |
+| `RealisticShotMaker-Portable-x.y.z.zip` | The same portable folder as a zip. Unzip anywhere and run `RealisticShotMaker.exe`. |
+| `RealisticShotMaker-Setup-x.y.z.exe` | A normal installer with Start menu and desktop shortcuts. |
+
+The portable versions keep their settings, render queue and drafts in a
+`data` folder next to the program, and renders go to `Renders` beside it, so
+they leave nothing behind on the PC. (That's the `portable.txt` file in the
+folder; delete it to use the normal Windows folders instead.)
+
+The program uses its own bundled Blender. If you'd rather use a different
+Blender 4.5+ install, pick it with **Blender → Find Blender**.
 
 Your graphics card is used automatically (NVIDIA OptiX first, then CUDA, AMD
 HIP or Intel oneAPI). RTX 50-series cards need Blender 4.4 or newer, which is

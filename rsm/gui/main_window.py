@@ -91,7 +91,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("RealisticShotMaker")
-        self.settings = QSettings("RealisticShotMaker", "RealisticShotMaker")
+        from ..paths import settings as _settings
+        self.settings = _settings()
         self.spec = ShotSpec()
         self.spec.output.output_dir = self.settings.value("output_dir", "") or ""
         self.current_file: str | None = None
@@ -717,7 +718,8 @@ class MainWindow(QMainWindow):
         self.still_job = None
 
     def _work_root(self) -> str:
-        return self.spec.output.output_dir or str(Path.home() / "Videos" / "RealisticShotMaker")
+        from ..paths import default_output_dir
+        return self.spec.output.output_dir or str(default_output_dir())
 
     def queue_render(self):
         if not self._need_blender():

@@ -56,3 +56,17 @@ def test_film_grades_match_catalog():
     from rsmb import filmlab
     for g in catalog.GRADES:
         assert g in filmlab.GRADES
+
+
+def test_portable_mode_keeps_everything_beside_the_program(tmp_path, monkeypatch):
+    from rsm import paths
+    monkeypatch.setattr(paths, "install_dir", lambda: tmp_path)
+    assert not paths.is_portable()
+    (tmp_path / "portable.txt").write_text("portable")
+    assert paths.is_portable()
+    assert paths.app_data_dir() == tmp_path / "data"
+    assert paths.default_output_dir() == tmp_path / "Renders"
+    assert paths.bundled_blender() is None
+    (tmp_path / "blender").mkdir()
+    (tmp_path / "blender" / "blender.exe").write_text("")
+    assert paths.bundled_blender() == tmp_path / "blender" / "blender.exe"

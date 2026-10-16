@@ -477,7 +477,8 @@ class QueuePanel(QWidget):
             folder = str(Path(it.job_path).parent)
         elif it and it.spec.output.output_dir:
             folder = it.spec.output.output_dir
-        folder = folder or str(Path.home() / "Videos" / "RealisticShotMaker")
+        from ..paths import default_output_dir
+        folder = folder or str(default_output_dir())
         os.makedirs(folder, exist_ok=True)
         _open_path(folder)
 
