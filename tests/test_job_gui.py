@@ -18,6 +18,19 @@ def test_build_job(tmp_path):
         assert p.endswith(".png")
 
 
+def test_job_paths_are_absolute_even_for_a_relative_output_folder(tmp_path, monkeypatch):
+    import os
+    monkeypatch.chdir(tmp_path)
+    s = ShotSpec()
+    s.output.resolution = "p360"
+    path = build_job(s, "relative_out", preview=True)
+    job = json.loads(path.read_text())
+    assert path.is_absolute()
+    for key in ("root", "work", "exr", "frames"):
+        assert os.path.isabs(job["paths"][key])
+    assert os.path.isabs(job["polaroid"]["files"]["color"])
+
+
 def test_gui_starts():
     from PySide6.QtWidgets import QApplication
     from rsm.gui.main_window import MainWindow

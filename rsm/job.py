@@ -107,7 +107,8 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     """Generate textures and write job.json. Returns the job file path."""
     out = spec.output
     from .paths import default_output_dir
-    root = Path(work_root or out.output_dir or default_output_dir())
+    # absolute: Blender runs in its own working folder, so relative paths in the job would point nowhere
+    root = Path(work_root or out.output_dir or default_output_dir()).expanduser().resolve()
     stamp = time.strftime("%Y%m%d-%H%M%S")
     job_dir = root / f"{out.name or 'shot'}_{stamp}"
     work = job_dir / "work"
