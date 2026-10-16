@@ -36,6 +36,7 @@ def test_queue_survives_restart(tmp_path):
     q2.resume(q2.items[0])
     assert q2.items[0].state == WAITING
     assert json.loads(store.read_text())["items"][0]["state"] == WAITING
+    _dispose(q, q2)
 
 
 def test_estimate_and_draft_engine():
@@ -62,3 +63,12 @@ def test_draft_player_frames(tmp_path):
     assert p.order == [1, 2]
     p.finish(True)
     assert not p.rendering
+    _dispose(p)
+
+
+def _dispose(*objs):
+    import shiboken6
+    for o in objs:
+        if shiboken6.isValid(o):
+            shiboken6.delete(o)
+    _app().processEvents()

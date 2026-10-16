@@ -62,7 +62,15 @@ def main(argv=None):
     from .main_window import MainWindow
     w = MainWindow()
     w.show()
-    return app.exec()
+    code = app.exec()
+    # tear down in a safe order while Qt is still alive (letting Python do it at exit can crash on Windows)
+    import shiboken6
+    w.wait_for_threads()
+    for obj in (w.preview_popup, w):
+        if shiboken6.isValid(obj):
+            shiboken6.delete(obj)
+    app.processEvents()
+    return code
 
 
 if __name__ == "__main__":

@@ -26,3 +26,13 @@ def test_gui_starts():
     w.apply_preset("Attic discovery")
     assert w.spec.scene.location == "attic_trunk"
     w.close()
+    _dispose(app, w)
+
+
+def _dispose(app, *objs):
+    """Delete Qt objects while the application still exists (tearing them down at interpreter exit crashes)."""
+    import shiboken6
+    for o in objs:
+        if shiboken6.isValid(o):
+            shiboken6.delete(o)
+    app.processEvents()

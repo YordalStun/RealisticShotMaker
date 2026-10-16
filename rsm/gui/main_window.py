@@ -891,6 +891,16 @@ class MainWindow(QMainWindow):
                           "traced with Blender Cycles.<br><br>Handwriting fonts: SIL Open Font License. "
                           "Sample photos: CC0.")
 
+    def wait_for_threads(self, ms: int = 8000):
+        """Give background work (renders being stopped, drafts, previews) a moment to wind down."""
+        threads = list(self.threads.values()) + [i.thread for i in self.rq.items if i.thread is not None]
+        for th in threads:
+            try:
+                if th.isRunning():
+                    th.wait(ms)
+            except RuntimeError:
+                pass
+
     def closeEvent(self, ev):
         r = self.rq.running()
         if r is not None and QMessageBox.question(
