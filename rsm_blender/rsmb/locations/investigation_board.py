@@ -467,6 +467,18 @@ def build(ctx: Ctx):
     wall("LeftWall", col, paint, "x", X0, Y0, Y1, 0, H)
     wall("RightWall", col, paint, "x", X1, Y0, Y1, 0, H)
     wall("FrontWall", col, paint, "y", Y0, X0, X1, 0, H)
+    # behind the camera: the office door, its wired-glass panel lit from the corridor. It's never in shot, but
+    # the glass board picks up a faint ghost of it, and that's where its smudges and wipe marks show.
+    door_x = -0.55
+    box("OfficeDoor", 0.9, 0.05, 2.05, (door_x, Y0 + 0.08, 1.025), M.wood("OfficeDoor", "oak", 0.5, 0.5,
+                                                                      grain_axis="Z"), col, bevel=0.004)
+    panel = box("DoorPanelGlow", 0.42, 0.01, 0.72, (door_x, Y0 + 0.11, 1.5), M.emitter("CorridorLight", 4300.0, 2.2),
+                col)
+    for k in range(5):   # the wire mesh in the glass
+        box("DoorWire", 0.42, 0.004, 0.003, (door_x, Y0 + 0.118, 1.2 + k * 0.15), M.metal("DoorWire", "#2a2a2a", 0.5),
+            col)
+        box("DoorWire", 0.003, 0.004, 0.72, (door_x - 0.21 + k * 0.105, Y0 + 0.118, 1.5), M.metal("DoorWire", "#2a2a2a",
+                                                                                                 0.5), col)
     lights = []
     street = _blinds_window(col, win["x0"], win["x1"], win["z0"], win["z1"], Y1, rng, blinds_on)
     # the street outside: dark buildings with a few lit windows (bokeh through the blinds)
