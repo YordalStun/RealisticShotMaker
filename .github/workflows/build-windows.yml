@@ -136,10 +136,14 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} packaging\installer.iss
       - uses: actions/upload-artifact@v4
         with:
-          name: RealisticShotMaker-Portable
-          path: |
-            dist/RealisticShotMaker-Portable-*.zip
-            dist/RealisticShotMaker-Portable-*.exe
+          name: RealisticShotMaker-Portable-exe
+          path: dist/RealisticShotMaker-Portable-*.exe
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RealisticShotMaker-Portable-zip
+          path: dist/RealisticShotMaker-Portable-*.zip
           compression-level: 0
           retention-days: 14
       - uses: actions/upload-artifact@v4
