@@ -34,7 +34,7 @@ def _brick(name="Brick"):
     br.inputs["Mortar Smooth"].default_value = 0.4
     br.inputs["Color1"].default_value = srgb("#e7e1d6")
     br.inputs["Color2"].default_value = srgb("#d9d1c3")
-    br.inputs["Mortar"].default_value = srgb("#b9b0a2")
+    br.inputs["Mortar"].default_value = srgb("#9c9284")
     n.link(mp, None, br, "Vector")
     # paint wears through on the odd brick edge, in small clusters
     chip = n.new("ShaderNodeTexNoise", Scale=55.0, Detail=8.0)
@@ -42,17 +42,17 @@ def _brick(name="Brick"):
     cluster = n.new("ShaderNodeTexNoise", Scale=2.5, Detail=1.0)
     n.link(mp, None, cluster, "Vector")
     chip_f = n.math("MULTIPLY", (chip, "Fac"), n.math("ADD", 0.72, n.math("MULTIPLY", (cluster, "Fac"), 0.45)))
-    chips = n.ramp(chip_f, [(0.62, (0, 0, 0)), (0.64, (1, 1, 1))])
+    chips = n.ramp(chip_f, [(0.7, (0, 0, 0)), (0.72, (0.55, 0.55, 0.55))])
     # every brick takes the paint a little differently
     tone = n.new("ShaderNodeTexNoise", Scale=4.0, Detail=2.0)
     n.link(mp, None, tone, "Vector")
     shade = n.mix("RGBA", (tone, "Fac"), srgb("#d8d0c2"), srgb("#efe9df"))
     painted = n.mix("RGBA", 0.5, (br, "Color"), shade, blend="MULTIPLY")
     painted = n.mix("RGBA", 0.6, painted, (br, "Color"))
-    col = n.mix("RGBA", (chips, "Color"), painted, srgb("#9a5a44"))
+    col = n.mix("RGBA", (chips, "Color"), painted, srgb("#8a6352"))
     b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.85)
     n.link(col, None, b, "Base Color")
-    bump = n.new("ShaderNodeBump", Strength=0.6, Distance=0.004)
+    bump = n.new("ShaderNodeBump", Strength=0.35, Distance=0.003)
     n.link(n.math("SUBTRACT", 1.0, (br, "Fac")), None, bump, "Height")
     rough_n = n.new("ShaderNodeTexNoise", Scale=140.0, Detail=6.0, Roughness=0.65)
     n.link(mp, None, rough_n, "Vector")
@@ -131,7 +131,8 @@ def build(ctx: Ctx):
     # ------------------------------------------------------------------ the lines and the prints
     metas = list(ctx.job.get("extra_prints", []))
     hero_meta = ctx.job["polaroid"]
-    wall_y = Y1 - 0.06
+    face = Y1 - 0.06               # the wall's surface
+    wall_y = face - 0.035          # the lines stand off the wall on their nails
     rows = [(1.62, 0.09), (1.28, 0.07)][:max(1, min(2, lines_n))]
     twine = M.fabric("LineTwine", "#a5865c", threads_per_m=2500, rough=0.9, sheen=0.4)
     hero_row = len(rows) - 1 if len(rows) > 1 else 0
@@ -140,13 +141,13 @@ def build(ctx: Ctx):
         a = Vector((-1.1, wall_y, z))
         b = Vector((1.1, wall_y, z + rng.uniform(-0.02, 0.02)))
         for nail in (a, b):
-            cylinder("Nail", 0.003, 0.03, (nail.x, wall_y + 0.03, nail.z), M.metal("Nail", "#7a7a7a", 0.4, 0.3, 0.6), col,
+            cylinder("Nail", 0.003, 0.042, (nail.x, face, nail.z), M.metal("Nail", "#7a7a7a", 0.4, 0.3, 0.6), col,
                      12, rot=(math.radians(90), 0, 0))
         at = sagging_line(f"Line{r_i}", col, a, b, sag, mat=twine)
         if lights_on and not darkroom:
             # wound along the twine just behind the prints: the bulbs glow between them and peek over
             # their top edges instead of hanging across the pictures
-            fairy_lights(col, [at(k / 6) + Vector((0, 0.014, 0.008)) for k in range(7)], 34, rng,
+            fairy_lights(col, [at(k / 6) + Vector((0, 0.016, 0.008)) for k in range(7)], 34, rng,
                          name=f"LineFairy{r_i}", sag=0.006)
         slots = [0.12, 0.27, 0.42, 0.58, 0.73, 0.88]
         if r_i == hero_row:
