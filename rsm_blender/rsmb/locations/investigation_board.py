@@ -49,6 +49,54 @@ def _marker_ink(name, hexc):
     return mat
 
 
+def _ghost_ink(name="MarkerGhost", hexc="#6a7590", strength=0.13):
+    """What's left of dry-erase writing after a quick wipe: a faint smeared film, streaky along the wipe."""
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.7)
+    b.inputs["Base Color"].default_value = srgb(hexc)
+    tc = n.new("ShaderNodeTexCoord")
+    mp = n.new("ShaderNodeMapping", Scale=(1.0, 1.0, 14.0))
+    n.link(tc, "Object", mp, "Vector")
+    wipe = n.new("ShaderNodeTexNoise", Scale=35.0, Detail=3.0)
+    n.link(mp, None, wipe, "Vector")
+    a = n.ramp((wipe, "Fac"), [(0.3, (0.0, 0.0, 0.0)), (0.75, (strength, strength, strength))])
+    n.link(a, "Color", b, "Alpha")
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    return mat
+
+
+def _fingerprint_mat(name="Fingerprint"):
+    """Skin oil on glass: whorled ridges, densest in the middle, almost invisible until light catches it."""
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.55)
+    b.inputs["Base Color"].default_value = srgb("#e8e6e0")
+    tc = n.new("ShaderNodeTexCoord")
+    mp = n.new("ShaderNodeMapping", Scale=(1 / 0.009, 1 / 0.009, 1 / 0.009))   # print radius -> 1
+    n.link(tc, "Object", mp, "Vector")
+    ridges = n.new("ShaderNodeTexWave", _wave_type="RINGS", Scale=2.6, Distortion=1.6, Detail=2.0)
+    n.link(mp, None, ridges, "Vector")
+    grad = n.new("ShaderNodeTexGradient", _gradient_type="SPHERICAL")
+    n.link(mp, None, grad, "Vector")
+    r = n.math("MULTIPLY", n.math("GREATER_THAN", (ridges, "Fac"), 0.55), (grad, "Fac"))
+    n.link(n.math("MULTIPLY", r, 0.32), None, b, "Alpha")
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    return mat
+
+
+def _fingerprint(col, at: Vector, mat, rng, name="Fingerprint"):
+    bm = bmesh.new()
+    bmesh.ops.create_circle(bm, cap_ends=True, segments=24, radius=0.009)
+    o = mesh_object(name, bm, col, mat=mat)
+    o.location = at
+    o.rotation_euler = (math.radians(90), rng.uniform(-0.8, 0.8), 0)
+    o.scale = (0.8, 1.15, 1.0)
+    return o
+
+
 def _screen(name, hue="#3a6ea8", strength=3.0, seed=0.0):
     """A computer screen: a dim app layout with lines of text-like detail."""
     mat = new_material(name)
@@ -611,6 +659,13 @@ def build(ctx: Ctx):
             _magnet(col, pin, "#c8342c", name=f"Pin{i}")
     if board_kind == "glass":
         _magnet(col, pins["hero"], "#c8342c", name="HeroMagnet")
+    if board_kind == "glass":
+        # fingerprints where hands pressed the glass while pinning things up
+        fmat = _fingerprint_mat()
+        for k, pin in enumerate(list(pins.values())[:5]):
+            for j in range(rng.randint(1, 3)):
+                off = Vector((rng.uniform(-0.06, 0.06), 0, rng.uniform(-0.01, 0.04)))
+                _fingerprint(col, Vector((pin.x, face_y - 0.00015, pin.z)) + off, fmat, rng, f"Fingerprint{k}{j}")
     card_ink = _marker_ink("BallpointBlue", "#1f2f7a")
     papers = [("index", (-0.88, -0.05), (0.127, 0.076)), ("sticky", (0.05, 0.42), (0.076, 0.076)),
               ("sticky", (0.88, -0.36), (0.076, 0.076)), ("clipping", (0.45, -0.05), (0.14, 0.2)),
@@ -662,6 +717,12 @@ def build(ctx: Ctx):
             _text(col, rng.choice(NOTES) if i else "WHO TOOK THIS?", font, rng.uniform(0.035, 0.06),
                   (px, face_y - 0.0003, BOARD_Z + pz), (math.radians(90), math.radians(rng.uniform(-4, 4)), 0),
                   inks[i % 3], name=f"Note{i}")
+        if board_kind == "glass":
+            # last week's notes, wiped off in a hurry: a faint smeared ghost is still there
+            ghost = _ghost_ink()
+            for i, (px, pz) in enumerate(((-0.36, 0.22), (0.27, -0.16), (-0.86, -0.3), (0.84, 0.16))[: 2 + int(clutter * 2)]):
+                _text(col, rng.choice(NOTES), font, rng.uniform(0.04, 0.06), (px, face_y - 0.0002, BOARD_Z + pz),
+                      (math.radians(90), math.radians(rng.uniform(-6, 6)), 0), ghost, name=f"GhostNote{i}")
         # a circle around the hero and an arrow towards it
         # hand-drawn: the loop wobbles, isn't quite closed and overshoots where it started
         ring = []
