@@ -152,7 +152,7 @@ def _board_glass(seed: float = 0.0):
     # greasy patches and fingerprints: rare blotches with a fine whorled texture inside
     blot = n.new("ShaderNodeTexNoise", Scale=2.6, Detail=2.0, Roughness=0.5)
     n.link(mapped((1, 1, 1)), None, blot, "Vector")
-    blot_m = n.ramp((blot, "Fac"), [(0.64, (0, 0, 0)), (0.74, (1, 1, 1))])
+    blot_m = n.ramp((blot, "Fac"), [(0.57, (0, 0, 0)), (0.7, (1, 1, 1))])
     whorl = n.new("ShaderNodeTexWave", _wave_type="RINGS", Scale=55.0, Distortion=9.0, Detail=4.0, **{"Detail Scale": 2.0})
     n.link(mapped((1, 1, 1), (3.1, 0, 0)), None, whorl, "Vector")
     smudge = n.math("MULTIPLY", (blot_m, "Color"), n.math("ADD", 0.35, n.math("MULTIPLY", (whorl, "Fac"), 0.65)))
@@ -160,10 +160,10 @@ def _board_glass(seed: float = 0.0):
     # ghost of erased marker: faint horizontal wipe streaks in a few areas
     streak = n.new("ShaderNodeTexNoise", Scale=1.0, Detail=3.0)
     n.link(mapped((1.6, 1, 28.0), (7.0, 0, 0)), None, streak, "Vector")
-    streak_m = n.ramp((streak, "Fac"), [(0.6, (0, 0, 0)), (0.7, (1, 1, 1))])
+    streak_m = n.ramp((streak, "Fac"), [(0.55, (0, 0, 0)), (0.68, (1, 1, 1))])
     region = n.new("ShaderNodeTexNoise", Scale=1.4, Detail=1.0)
     n.link(mapped((1, 1, 1), (11.0, 0, 0)), None, region, "Vector")
-    region_m = n.ramp((region, "Fac"), [(0.55, (0, 0, 0)), (0.66, (1, 1, 1))])
+    region_m = n.ramp((region, "Fac"), [(0.5, (0, 0, 0)), (0.62, (1, 1, 1))])
     ghost = n.math("MULTIPLY", (streak_m, "Color"), (region_m, "Color"))
 
     # dust specks: tiny dots in a small fraction of cells
@@ -184,7 +184,7 @@ def _board_glass(seed: float = 0.0):
 
     rough = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.22), n.math("MULTIPLY", ghost, 0.1)),
                    n.math("MULTIPLY", scratch, 0.35))
-    haze = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.06), n.math("MULTIPLY", ghost, 0.07)),
+    haze = n.math("ADD", n.math("ADD", n.math("MULTIPLY", smudge, 0.09), n.math("MULTIPLY", ghost, 0.08)),
                   n.math("ADD", n.math("MULTIPLY", dust, 0.7), n.math("MULTIPLY", scratch, 0.25)), clamp=True)
 
     # very slight roller wave in the float glass: bends reflections, never the view through it

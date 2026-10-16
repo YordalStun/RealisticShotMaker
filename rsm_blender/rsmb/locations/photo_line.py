@@ -32,8 +32,8 @@ def _brick(name="Brick"):
     br.inputs["Row Height"].default_value = 0.075
     br.inputs["Mortar Size"].default_value = 0.008
     br.inputs["Mortar Smooth"].default_value = 0.4
-    br.inputs["Color1"].default_value = srgb("#e7e1d6")
-    br.inputs["Color2"].default_value = srgb("#d9d1c3")
+    br.inputs["Color1"].default_value = srgb("#ebe5da")
+    br.inputs["Color2"].default_value = srgb("#d2c7b4")
     br.inputs["Mortar"].default_value = srgb("#9c9284")
     n.link(mp, None, br, "Vector")
     # paint wears through on the odd brick edge, in small clusters
@@ -56,8 +56,12 @@ def _brick(name="Brick"):
     n.link(n.math("SUBTRACT", 1.0, (br, "Fac")), None, bump, "Height")
     rough_n = n.new("ShaderNodeTexNoise", Scale=140.0, Detail=6.0, Roughness=0.65)
     n.link(mp, None, rough_n, "Vector")
-    bump2 = n.new("ShaderNodeBump", Strength=0.35, Distance=0.0015)
-    n.link(n.math("ADD", (rough_n, "Fac"), n.math("MULTIPLY", (chips, "Color"), -0.4)), None, bump2, "Height")
+    # uneven brick faces under the paint: dips and lumps a few centimetres across, plus fine pitting
+    lumps = n.new("ShaderNodeTexNoise", Scale=22.0, Detail=4.0, Roughness=0.6)
+    n.link(mp, None, lumps, "Vector")
+    face = n.math("ADD", n.math("MULTIPLY", (lumps, "Fac"), 1.6), (rough_n, "Fac"))
+    bump2 = n.new("ShaderNodeBump", Strength=0.55, Distance=0.0025)
+    n.link(n.math("ADD", face, n.math("MULTIPLY", (chips, "Color"), -0.4)), None, bump2, "Height")
     n.link(bump, None, bump2, "Normal")
     n.link(bump2, None, b, "Normal")
     out = n.new("ShaderNodeOutputMaterial")
