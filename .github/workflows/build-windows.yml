@@ -42,8 +42,12 @@ jobs:
         run: |
           $spec = @{ output = @{ resolution = "preview" } } | ConvertTo-Json
           Set-Content -Path smoke.rsm.json -Value $spec
-          & dist/RealisticShotMaker/RealisticShotMaker.exe job smoke.rsm.json --out smoke_out
+          # the exe is a windowed app, so wait for it explicitly
+          $p = Start-Process -FilePath "dist\RealisticShotMaker\RealisticShotMaker.exe" `
+                 -ArgumentList "job","smoke.rsm.json","--out","smoke_out" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "frozen app exited with code $($p.ExitCode)" }
           if (-not (Get-ChildItem smoke_out -Recurse -Filter job.json)) { throw "job.json was not created" }
+          if (-not (Get-ChildItem smoke_out -Recurse -Filter hero_color.png)) { throw "print textures were not created" }
       - name: Build installer
         shell: pwsh
         run: |

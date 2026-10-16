@@ -10,7 +10,7 @@ from .. import materials as M
 from .. import props as P
 from ..camera_rig import Anchors
 from ..util import box, cylinder
-from .common import Ctx, Room, place_card, scatter_prints
+from .common import Ctx, Room, cobweb_strands, opt, place_card, scatter_prints, switched_on
 
 
 def build(ctx: Ctx):
@@ -85,7 +85,13 @@ def build(ctx: Ctx):
     stuff = M.paper("Letters", "#e3d6b8", rough=0.8, age=0.8, ink_lines=True, line_color="#3a3a5a")
     box("TrunkFill", tw - 0.06, td - 0.06, inside_z - 0.02, (trunk_loc.x, trunk_loc.y, 0.015 + (inside_z - 0.02) / 2),
         stuff, col).rotation_euler = (0, 0, math.radians(-8))
-    P.letter_pile("TrunkLetters", col, (trunk_loc.x - 0.18, trunk_loc.y - 0.05, inside_z), count=6, rng=rng)
+    extras = ctx.job.get("extra_prints", [])
+    fill = opt(ctx, "trunk_fill", "letters")
+    if fill in ("letters", "mixed"):
+        P.letter_pile("TrunkLetters", col, (trunk_loc.x - 0.18, trunk_loc.y - 0.05, inside_z), count=6, rng=rng)
+    if fill in ("photos", "mixed") and extras:
+        scatter_prints(extras[-3:], col, Vector((trunk_loc.x + 0.2, trunk_loc.y + 0.05, inside_z)), 0.12, rng,
+                       inside_z, prefix="LoosePrint")
     meta = ctx.job["polaroid"]
     extras = ctx.job.get("extra_prints", [])
     card_h = meta["card_mm"][1] / 1000.0
@@ -103,18 +109,18 @@ def build(ctx: Ctx):
         # leaning against the inside wall of the trunk
         hero, centre, normal = place_card(meta, "HeroPrint", col, Vector((anchor.x, trunk_loc.y + td / 2 - 0.09, inside_z)),
                                           math.radians(rng.uniform(-6, 6)), "leaning", 20.0)
-        el = 10.0
+        el = 28.0  # look down over the front wall of the trunk
     else:
         hero, centre, normal = place_card(meta, "HeroPrint", col, Vector((anchor.x, anchor.y, base_z)),
                                           math.radians(rng.uniform(-15, 15)), "flat")
-        el = 42.0
+        el = 55.0
     view = Vector((0.15, -1.0, 0.0)).normalized()
     vd = Vector((view.x * math.cos(math.radians(el)), view.y * math.cos(math.radians(el)), math.sin(math.radians(el))))
     apparent = card_h * max(0.35, abs(normal.dot(vd)))
 
     # ------------------------------------------------------------------ attic clutter
     sheet = M.fabric("DustSheet", "#d8d0bf", threads_per_m=1200, rough=0.95, sheen=0.4)
-    if clutter > 0.2:
+    if clutter > 0.2 and opt(ctx, "dust_sheets", True):
         # sheet-covered armchair shape
         bpy.ops.mesh.primitive_cube_add(size=1, location=(1.4, 1.6, 0.45))
         ch = bpy.context.object
@@ -143,7 +149,19 @@ def build(ctx: Ctx):
         box("Crate", 0.45, 0.35, 0.3, (1.0, -0.9, 0.15), M.wood("Crate", "pine", 0.0, 0.8, 0.5, planks=(0.6, 0.09)), col,
             bevel=0.004)
     lights = []
-    if ctx.lights_on:
+    if opt(ctx, "cobwebs", True):
+        pairs = []
+        for i in range(10):
+            y = rng.uniform(-1.5, 1.5)
+            a = Vector((rng.uniform(-1.6, -0.6), y, rng.uniform(1.2, 1.9)))
+            b = a + Vector((rng.uniform(0.15, 0.6), rng.uniform(-0.3, 0.3), rng.uniform(-0.35, 0.1)))
+            pairs.append((a, b))
+        # webs strung across the skylight shaft catch the light
+        for i in range(5):
+            a = Vector((-1.0 + rng.uniform(-0.2, 0.2), -0.5 + rng.uniform(-0.4, 0.4), 1.75))
+            pairs.append((a, a + Vector((rng.uniform(0.2, 0.5), rng.uniform(-0.2, 0.2), -rng.uniform(0.1, 0.4)))))
+        cobweb_strands(col, pairs, rng)
+    if switched_on(ctx, "bare_bulb"):
         # a bare bulb hanging from the ridge
         bulb = cylinder("BareBulb", 0.03, 0.08, (0.0, -0.4, 1.75), M.frosted_bulb("BareBulb", 2400, 30), col, 32)
         from ..world import kelvin_rgb
@@ -162,7 +180,7 @@ def build(ctx: Ctx):
         subject=centre, card_normal=normal, card_height=apparent, view_dir=vd,
         rack_point=Vector((-0.75, 0.6, 0.12)), tilt_from=Vector((gx, sky["y"], gz - 0.2)),
         pan_from=Vector((trunk_loc.x - 0.18, trunk_loc.y - 0.05, inside_z)), reveal_target=trunk_loc + Vector((0, 0, 0.3)),
-        min_height=inside_z + 0.05,
+        min_height=th + 0.06,
     )
     room = Room(Vector((-W / 2, -D / 2, 0)), Vector((W / 2, D / 2, RIDGE)))
     dust_box = (Vector((-1.2, -1.2, 0.1)), Vector((1.2, 1.2, 2.0)))

@@ -47,7 +47,11 @@ def film_params(spec: ShotSpec) -> dict:
     def pick(v, default):
         return default if v is None or v < 0 else v
     character = max(0.0, lk.lens_character)
+    # how bright the subject should sit: night stays dark and moody, daylight is brighter
+    key = {"morning": 0.17, "midday": 0.18, "golden": 0.15, "evening": 0.1, "night": 0.065}.get(
+        spec.scene.time_of_day, 0.15)
     return dict(
+        key=key,
         exposure=lk.exposure,
         grade=lk.grade,
         grain=pick(lk.grain, body.grain),
@@ -108,7 +112,13 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     resolved = resolve(spec)
     framing_name, fill = catalog.FRAMINGS.get(spec.camera.framing, catalog.FRAMINGS["close"])
     film = catalog.FILM_TYPES.get(spec.polaroid.film, catalog.FILM_TYPES["600"])
-    ppm = px_per_mm_for(resolved["height"], fill, film.card_mm[1], cap=24.0 if preview else 40.0)
+    tex_fill = fill
+    cap = 40.0
+    if spec.camera.move == "macro_cut" or spec.camera.framing == "extreme_close":
+        # the close-up fills the screen with a small part of the print: it needs a lot more texture detail
+        tex_fill = max(fill, spec.camera.macro_fill if spec.camera.move == "macro_cut" else fill)
+        cap = 56.0
+    ppm = px_per_mm_for(resolved["height"], tex_fill, film.card_mm[1], cap=24.0 if preview else cap)
 
     progress("Developing the instant print…")
     hero = generate(spec.polaroid, ppm).save(work, "hero")
@@ -120,6 +130,8 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
         n_extra = 3
     if spec.scene.placement == "pile":
         n_extra += 5
+    if spec.scene.location == "investigation_board":
+        n_extra = 7  # the board is covered in other photos
     for i in range(n_extra):
         progress(f"Making other photos ({i + 1}/{n_extra})…")
         v = _variant(spec.polaroid, r)
@@ -144,7 +156,9 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
         polaroid=hero,
         extra_prints=extras,
         frame_photos=frame_photos,
-        paths=dict(root=str(job_dir), work=str(work), exr=str(job_dir / "exr"), frames=str(job_dir / "frames")),
+        location_options=catalog.location_options(spec.scene.location, spec.scene.options),
+        paths=dict(root=str(job_dir), work=str(work), exr=str(job_dir / "exr"), frames=str(job_dir / "frames"),
+                   fonts=str(Path(__file__).resolve().parent / "assets" / "fonts")),
         created=stamp,
     )
     path = job_dir / "job.json"

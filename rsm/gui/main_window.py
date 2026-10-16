@@ -215,6 +215,11 @@ class MainWindow(QMainWindow):
                 w.setToolTip(f.tip)
             groups[g].addRow(f.label, w)
             self.widgets[f.path] = w
+        if section == "Scene":
+            box = QGroupBox("Location options")
+            self.locopt_form = QFormLayout(box)
+            self.locopt_form.setLabelAlignment(Qt.AlignRight)
+            lay.insertWidget(1, box)
         lay.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -306,6 +311,43 @@ class MainWindow(QMainWindow):
                 elif f.kind == "folder":
                     w.set_value(str(v))
         self._loading = False
+        self._rebuild_location_options()
+        self._update_estimate()
+
+    def _rebuild_location_options(self):
+        """Options that only exist for the chosen location (string on the board, breakfast mess, …)."""
+        form = getattr(self, "locopt_form", None)
+        if form is None:
+            return
+        while form.rowCount():
+            form.removeRow(0)
+        loc = catalog.LOCATIONS.get(self.spec.scene.location)
+        values = catalog.location_options(self.spec.scene.location, self.spec.scene.options)
+        if not loc or not loc.options:
+            form.addRow(QLabel("No extra options for this location."))
+            return
+        for o in loc.options:
+            v = values[o.id]
+            if o.kind == "combo":
+                w = QComboBox()
+                for val, label in o.choices:
+                    w.addItem(label, val)
+                w.setCurrentIndex(max(0, w.findData(v)))
+                w.currentIndexChanged.connect(lambda _, o=o, w=w: self._loc_opt(o.id, w.currentData()))
+            elif o.kind == "slider":
+                w = SliderField(0.0, 1.0, 0.01)
+                w.setValue(float(v))
+                w.valueChanged.connect(lambda val, o=o: self._loc_opt(o.id, val))
+            else:
+                w = QCheckBox()
+                w.setChecked(bool(v))
+                w.toggled.connect(lambda val, o=o: self._loc_opt(o.id, bool(val)))
+            if o.tip:
+                w.setToolTip(o.tip)
+            form.addRow(o.label, w)
+
+    def _loc_opt(self, key, value):
+        self.spec.scene.options[key] = value
         self._update_estimate()
 
     def _changed(self, f: Field, value):
@@ -317,6 +359,14 @@ class MainWindow(QMainWindow):
             c.pop("name", None)
             for k, v in c.items():
                 setattr(self.spec.polaroid, k, v)
+            self._load_into_widgets()
+        if f.path == "scene.location":
+            self.spec.scene.options = {}
+            loc = catalog.LOCATIONS.get(value)
+            if loc:
+                self.spec.scene.time_of_day = loc.default_time
+                if self.spec.scene.placement not in loc.placements:
+                    self.spec.scene.placement = loc.placements[0]
             self._load_into_widgets()
         if f.path == "camera.move":
             mv = catalog.MOVES.get(value)

@@ -10,8 +10,8 @@ from .. import materials as M
 from .. import props as P
 from ..camera_rig import Anchors
 from ..util import add_bevel, box, cylinder
-from .common import (Ctx, Room, aim_sun_through, curtain, outdoor_backdrop, place_card, scatter_prints, wall,
-                     window)
+from .common import (Ctx, Room, aim_sun_through, curtain, opt, outdoor_backdrop, place_card, scatter_prints,
+                     steam, switched_on, wall, window)
 
 DESK_Z = 0.76
 
@@ -33,8 +33,11 @@ def build(ctx: Ctx):
     back_win = dict(c=0.05, w=1.35, b=0.8, t=2.2)  # right behind the desk: bright window bokeh behind the print
     wall("BackWall", col, plaster, "y", Y1, X0, X1, 0, H, openings=[(back_win["c"], back_win["w"], back_win["b"], back_win["t"])])
     window("BackWindow", col, "y", Y1, back_win["c"], back_win["w"], back_win["b"], back_win["t"], inward=-1, panes=(3, 3))
-    curtain("CurtainL", col, "y", Y1, back_win["c"] - back_win["w"] / 2 - 0.12, 0.5, 0.25, 2.45, -1, sheer=0.6)
-    curtain("CurtainR", col, "y", Y1, back_win["c"] + back_win["w"] / 2 + 0.12, 0.5, 0.25, 2.45, -1, sheer=0.6)
+    drawn = opt(ctx, "curtains", "open") == "half"
+    cw = 0.95 if drawn else 0.5
+    inset = 0.25 if drawn else -0.12
+    curtain("CurtainL", col, "y", Y1, back_win["c"] - back_win["w"] / 2 + inset, cw, 0.25, 2.45, -1, sheer=0.6)
+    curtain("CurtainR", col, "y", Y1, back_win["c"] + back_win["w"] / 2 - inset, cw, 0.25, 2.45, -1, sheer=0.6)
     # left wall with the side window the sun comes through
     side_win = dict(c=-0.75, w=1.1, b=0.8, t=2.05)  # forward of the desk: sun rakes across the print
     wall("LeftWall", col, plaster, "x", X0, Y0, Y1, 0, H, openings=[(side_win["c"], side_win["w"], side_win["b"], side_win["t"])])
@@ -110,7 +113,8 @@ def build(ctx: Ctx):
     # ------------------------------------------------------------------ props
     lights = []
     on = ctx.lights_on
-    lamp, lamp_light = P.bankers_lamp("Lamp", col, (-0.5, 0.58, surf), math.radians(12), on=on, power=7.0)
+    lamp, lamp_light = P.bankers_lamp("Lamp", col, (-0.5, 0.58, surf), math.radians(12),
+                                      on=switched_on(ctx, "desk_lamp"), power=7.0)
     if lamp_light:
         lights.append(lamp_light)
     frame_imgs = ctx.job.get("frame_photos", [])
@@ -119,10 +123,13 @@ def build(ctx: Ctx):
     rack_point = Vector((0.24, 0.6, surf + 0.1))
     if clutter > 0.15:
         P.mug("Mug", col, (-0.27, 0.07, surf), math.radians(rng.uniform(0, 360)), color="#6c8a7e")
+        if opt(ctx, "steam", False):
+            steam(col, Vector((-0.27, 0.07, surf + 0.075)), name="MugSteam")
         P.book_stack("Books", col, (0.5, 0.42, surf), count=3 + int(clutter * 2), rng=rng, rot_z=math.radians(8))
     if clutter > 0.35:
         P.reading_glasses("Glasses", col, (0.23, 0.08, surf), math.radians(-25))
-        P.letter_pile("Letters", col, (-0.18, 0.33, surf), count=3, rng=rng)
+        if opt(ctx, "letters", True):
+            P.letter_pile("Letters", col, (-0.18, 0.33, surf), count=3, rng=rng)
     if clutter > 0.55:
         P.fountain_pen("Pen", col, (0.11, 0.13, surf), math.radians(70))
         P.potted_plant("Plant", col, (0.62, 0.62, surf), rng=rng)
@@ -133,24 +140,8 @@ def build(ctx: Ctx):
         scatter_prints(extras[:3], col, Vector((anchor.x, anchor.y - 0.05, surf)), 0.24, rng, surf,
                        avoid=Vector((anchor.x, anchor.y, surf)), avoid_r=0.12)
 
-    # bookcase in the background (right of the window)
-    bc_wood = M.wood("Bookcase", "oak", varnish=0.5, wear=0.4, scale=1.0, grain_axis="X", seed=5.5)
-    bx, by = 1.45, Y1 - 0.2
-    box("BookcaseSideL", 0.025, 0.32, 2.0, (bx - 0.45, by, 1.0), bc_wood, col, bevel=0.003)
-    box("BookcaseSideR", 0.025, 0.32, 2.0, (bx + 0.45, by, 1.0), bc_wood, col, bevel=0.003)
-    for k, z in enumerate((0.05, 0.45, 0.85, 1.25, 1.65, 2.0)):
-        box(f"Shelf{k}", 0.9, 0.32, 0.025, (bx, by, z), bc_wood, col, bevel=0.003)
-        if 0 < k < 5:
-            x = bx - 0.42
-            while x < bx + 0.4:
-                bw = rng.uniform(0.022, 0.05)
-                bh = rng.uniform(0.2, 0.32)
-                col_hex = rng.choice(P.BOOK_COLOURS)
-                b = box(f"ShelfBook{k}", bw, 0.2, bh, (x + bw / 2, by + rng.uniform(-0.02, 0.02), z + 0.0125 + bh / 2),
-                        M.fabric(f"Spine{col_hex}", col_hex, 2600, 0.75, 0.2), col, bevel=0.002)
-                if rng.random() < 0.12:
-                    b.rotation_euler = (0, math.radians(rng.uniform(5, 14)), 0)
-                x += bw + 0.002
+    if opt(ctx, "bookcase", True):
+        _bookcase(col, rng, 1.45, Y1 - 0.2)
     # evening/night: a floor lamp in the far corner gives background bokeh
     if on:
         fl_root, fl_light = P.bankers_lamp("CornerLamp", col, (1.7, 1.6, 0.9), 0.0, on=True, power=10.0)
@@ -177,3 +168,23 @@ def build(ctx: Ctx):
     room = Room(Vector((X0, Y0, 0)), Vector((X1, Y1, H)))
     dust_box = (Vector((-0.9, -0.3, surf)), Vector((0.9, 1.4, surf + 0.9)))
     return dict(anchors=anchors, room=room, dust_box=dust_box, lights=lights, hero=hero)
+
+
+def _bookcase(col, rng, bx, by):
+    """Tall oak bookcase full of cloth-bound books."""
+    bc_wood = M.wood("Bookcase", "oak", varnish=0.5, wear=0.4, scale=1.0, grain_axis="X", seed=5.5)
+    box("BookcaseSideL", 0.025, 0.32, 2.0, (bx - 0.45, by, 1.0), bc_wood, col, bevel=0.003)
+    box("BookcaseSideR", 0.025, 0.32, 2.0, (bx + 0.45, by, 1.0), bc_wood, col, bevel=0.003)
+    for k, z in enumerate((0.05, 0.45, 0.85, 1.25, 1.65, 2.0)):
+        box(f"Shelf{k}", 0.9, 0.32, 0.025, (bx, by, z), bc_wood, col, bevel=0.003)
+        if 0 < k < 5:
+            x = bx - 0.42
+            while x < bx + 0.4:
+                bw = rng.uniform(0.022, 0.05)
+                bh = rng.uniform(0.2, 0.32)
+                col_hex = rng.choice(P.BOOK_COLOURS)
+                b = box(f"ShelfBook{k}", bw, 0.2, bh, (x + bw / 2, by + rng.uniform(-0.02, 0.02), z + 0.0125 + bh / 2),
+                        M.fabric(f"Spine{col_hex}", col_hex, 2600, 0.75, 0.2), col, bevel=0.002)
+                if rng.random() < 0.12:
+                    b.rotation_euler = (0, math.radians(rng.uniform(5, 14)), 0)
+                x += bw + 0.002

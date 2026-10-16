@@ -116,30 +116,103 @@ BUILTIN_PHOTOS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
+class LocOpt:
+    """An option that only exists for one location."""
+    id: str
+    label: str
+    kind: str = "check"            # check | combo | slider
+    default: object = False
+    choices: tuple = ()            # ((value, label), ...) for combos
+    tip: str = ""
+
+
+AUTO_ON_OFF = (("auto", "Automatic (time of day)"), ("on", "On"), ("off", "Off"))
+
+
+@dataclass(frozen=True)
 class Location(Option):
     placements: tuple[str, ...] = ("leaning", "flat", "pile")
     default_time: str = "golden"
+    options: tuple = ()
 
 
 LOCATIONS: dict[str, Location] = {l.id: l for l in [
     Location("study_desk", "Study desk by the window",
              "An old wooden writing desk in a family home. Pencil pot, desk lamp, books, a mug and framed "
-             "photos, with a sunny window behind.", default_time="golden"),
+             "photos, with a sunny window behind.", default_time="golden", options=(
+                 LocOpt("desk_lamp", "Desk lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("curtains", "Curtains", "combo", "open", (("open", "Open"), ("half", "Half drawn"))),
+                 LocOpt("letters", "Old letters on the desk", "check", True),
+                 LocOpt("bookcase", "Bookcase in the background", "check", True),
+                 LocOpt("steam", "Steam rising from the mug", "check", False,
+                        tip="A wisp of steam from a fresh coffee. Volumetric, adds render time."),
+             )),
     Location("kitchen_table", "Kitchen table, morning",
-             "A farmhouse kitchen table with a teapot, fruit bowl and linen cloth. Soft morning light "
-             "through net curtains.", default_time="morning"),
+             "A farmhouse kitchen table with a teapot, fruit bowl and linen runner. Soft morning light "
+             "through net curtains.", default_time="morning", options=(
+                 LocOpt("mess", "Breakfast mess", "combo", "some",
+                        (("none", "Clean table"), ("some", "A little (crumbs, a knife)"),
+                         ("lots", "Lots (toast, spilt sugar, rings)"))),
+                 LocOpt("flowers", "Flowers on the table", "check", True),
+                 LocOpt("fruit", "Fruit bowl", "check", True),
+                 LocOpt("pendant", "Hanging lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("net_curtains", "Net curtains", "check", True),
+             )),
     Location("attic_trunk", "Attic memory trunk",
              "An open wooden trunk in a dusty attic. Old letters and photos, with a beam of light from a "
-             "skylight.", default_time="midday"),
+             "skylight.", default_time="midday", options=(
+                 LocOpt("bare_bulb", "Bare light bulb", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("cobwebs", "Cobwebs", "check", True),
+                 LocOpt("trunk_fill", "Trunk contents", "combo", "letters",
+                        (("letters", "Bundles of letters"), ("photos", "Loose photos"), ("mixed", "Letters and photos"))),
+                 LocOpt("dust_sheets", "Dust sheets over furniture", "check", True),
+             )),
     Location("bedside_night", "Bedside table at night",
              "A bedside table lit by a warm lamp: alarm clock, glass of water, reading glasses. Moonlight "
-             "from the window.", ("leaning", "flat", "pile"), default_time="night"),
+             "from the window.", ("leaning", "flat", "pile"), default_time="night", options=(
+                 LocOpt("lamp", "Bedside lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("street_lights", "Street lights outside", "check", True),
+                 LocOpt("phone", "Phone screen glowing on the table", "check", False),
+                 LocOpt("curtains", "Curtains", "combo", "open", (("open", "Open"), ("half", "Half drawn"))),
+             )),
     Location("mantelpiece", "Mantelpiece",
              "A living-room mantelpiece with a carriage clock, candles and frames. Fire glow from below.",
-             ("leaning",), default_time="evening"),
+             ("leaning",), default_time="evening", options=(
+                 LocOpt("fire", "Fire", "combo", "lit", (("lit", "Burning"), ("embers", "Glowing embers"),
+                                                        ("out", "Out"))),
+                 LocOpt("candles", "Candles", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("christmas", "Christmas decorations", "check", False,
+                        tip="Fairy lights, cards and a garland along the mantel."),
+             )),
+    Location("investigation_board", "Investigation board",
+             "A see-through glass incident board covered in photos, marker notes and red string, in a "
+             "detective's office at night.", ("pinned",), default_time="night", options=(
+                 LocOpt("board", "Board", "combo", "glass", (("glass", "Glass board"), ("cork", "Cork board"))),
+                 LocOpt("string", "String between photos", "check", True),
+                 LocOpt("string_color", "String colour", "combo", "red",
+                        (("red", "Red"), ("yellow", "Yellow"), ("white", "White"))),
+                 LocOpt("room_lights", "Office lights", "combo", "off", (("on", "On"), ("off", "Off"))),
+                 LocOpt("spotlight", "Spotlight on the photo", "check", True,
+                        tip="A hard light that picks out your photo on the board."),
+                 LocOpt("monitors", "Computer screens on", "check", True),
+                 LocOpt("blinds", "Light through the blinds", "check", True),
+                 LocOpt("marker_notes", "Marker writing on the glass", "check", True),
+             )),
 ]}
 
+
+def location_options(loc_id: str, overrides: dict | None = None) -> dict:
+    """Defaults for a location merged with the user's choices."""
+    loc = LOCATIONS.get(loc_id)
+    out = {o.id: o.default for o in (loc.options if loc else ())}
+    for k, v in (overrides or {}).items():
+        if k in out:
+            out[k] = v
+    return out
+
+
 PLACEMENTS = {
+    "pinned": "Pinned to the board",
     "leaning": "Leaning upright",
     "flat": "Lying flat",
     "pile": "On top of a pile of photos",
@@ -171,6 +244,8 @@ class Move(Option):
 
 MOVES: dict[str, Move] = {m.id: m for m in [
     Move("push_in", "Slow push-in", "The camera creeps toward the photo. Says: this matters."),
+    Move("macro_cut", "Extreme close-up, then cut wider", "Opens deep inside the picture (faces, grain, "
+         "scratches), then hard-cuts to a normal shot of the photo in its setting.", 9.0),
     Move("pull_out", "Slow pull-out", "Starts tight on the photo and drifts back to reveal the room.", 9.0),
     Move("slide_right", "Slide right", "Glides sideways to the right. Foreground and background move at "
          "different speeds (parallax)."),

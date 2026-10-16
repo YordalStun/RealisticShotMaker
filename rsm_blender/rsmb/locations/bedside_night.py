@@ -11,8 +11,8 @@ from .. import props as P
 from ..camera_rig import Anchors
 from ..util import box, cylinder, lathe, link
 from ..world import kelvin_rgb
-from .common import (Ctx, Room, animate_flicker, curtain, outdoor_backdrop, place_card, scatter_prints, wall,
-                     wallpaper, window)
+from .common import (Ctx, Room, animate_flicker, curtain, opt, outdoor_backdrop, place_card, scatter_prints,
+                     switched_on, wall, wallpaper, window)
 
 TOP_Z = 0.62
 
@@ -52,7 +52,7 @@ def build(ctx: Ctx):
     s = ctx.scene_spec
     clutter = float(s.get("clutter", 0.7))
     tod = s.get("time_of_day", "night")
-    lamp_on = tod in ("evening", "night") or ctx.lights_on
+    lamp_on = switched_on(ctx, "lamp") if opt(ctx, "lamp", "auto") != "auto" else (tod in ("evening", "night") or ctx.lights_on)
 
     X0, X1, Y0, Y1, H = -2.0, 2.4, -2.2, 1.2, 2.5
     paper = wallpaper("BedroomPaper", "#bfae90", "#a3906c", 8.0)
@@ -63,16 +63,18 @@ def build(ctx: Ctx):
     win = dict(c=-0.9, w=1.0, b=0.85, t=2.1)
     wall("BackWall", col, paper, "y", Y1, X0, X1, 0, H, openings=[(win["c"], win["w"], win["b"], win["t"])])
     window("BedroomWindow", col, "y", Y1, win["c"], win["w"], win["b"], win["t"], inward=-1, panes=(2, 3))
-    curtain("NightCurtainL", col, "y", Y1, win["c"] - 0.62, 0.55, 0.05, 2.4, -1, color="#3d4a5c", sheer=0.15,
+    half = opt(ctx, "curtains", "open") == "half"
+    cw, inset = (0.85, 0.3) if half else (0.55, 0.0)
+    curtain("NightCurtainL", col, "y", Y1, win["c"] - 0.62 + inset, cw, 0.05, 2.4, -1, color="#3d4a5c", sheer=0.15,
             folds=7)
-    curtain("NightCurtainR", col, "y", Y1, win["c"] + 0.62, 0.55, 0.05, 2.4, -1, color="#3d4a5c", sheer=0.15,
+    curtain("NightCurtainR", col, "y", Y1, win["c"] + 0.62 - inset, cw, 0.05, 2.4, -1, color="#3d4a5c", sheer=0.15,
             folds=7)
     for nm, ax, pl in (("LeftWall", "x", X0), ("RightWall", "x", X1)):
         wall(nm, col, paper, ax, pl, Y0, Y1, 0, H)
     wall("FrontWall", col, paper, "y", Y0, X0, X1, 0, H)
     outdoor_backdrop(col, Vector((win["c"], Y1, 0)), Vector((0, 1, 0)), rng, distance=9.0, trees=6)
     # street lights far outside: bright points that become big soft bokeh
-    for i in range(5):
+    for i in range(5 if opt(ctx, "street_lights", True) else 0):
         p = Vector((win["c"] + rng.uniform(-6, 6), Y1 + rng.uniform(14, 30), rng.uniform(2.5, 4.5)))
         ld = bpy.data.lights.new(f"StreetLight{i}", "POINT")
         ld.energy = rng.uniform(800, 2000)
@@ -172,6 +174,8 @@ def build(ctx: Ctx):
         P.reading_glasses("Glasses", col, (tx + 0.13, ty - 0.12, surf), math.radians(15))
         P.book("NightBook", col, (tx + 0.02, ty + 0.1, surf + 0.0), (0.14, 0.21, 0.028), "#2f3e52",
                (0, 0, math.radians(80)), rng)
+    if opt(ctx, "phone", False):
+        _phone(col, Vector((tx + 0.16, ty - 0.02, surf)), math.radians(rng.uniform(-25, 10)))
     if s.get("extra_photos", True) and extras and clutter > 0.6:
         scatter_prints(extras[:1], col, Vector((tx + 0.16, ty - 0.13, surf)), 0.02, rng, surf)
 
@@ -185,3 +189,27 @@ def build(ctx: Ctx):
     room = Room(Vector((X0, Y0, 0)), Vector((X1, Y1, H)))
     dust_box = (Vector((-0.6, 0.0, surf)), Vector((0.6, 1.2, surf + 0.8)))
     return dict(anchors=anchors, room=room, dust_box=dust_box, lights=lights, hero=hero)
+
+
+def _phone(col, at: Vector, rot: float):
+    """A smartphone lying face up, its lock screen lighting the table."""
+    from ..util import Nodes, new_material, srgb
+    body = box("Phone", 0.072, 0.15, 0.008, (at.x, at.y, at.z + 0.004), M.plastic("PhoneBody", "#141416", 0.25, 0.8),
+               col, bevel=0.006, segments=5, rot=(0, 0, rot))
+    mat = new_material("PhoneScreen")
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+    grad = n.new("ShaderNodeTexGradient")
+    n.link(tc, "Generated", grad, "Vector")
+    ramp = n.ramp((grad, "Fac"), [(0.0, srgb("#1d2b5a")), (1.0, srgb("#7a4a7c"))])
+    em = n.new("ShaderNodeEmission", Strength=2.2)
+    n.link(ramp, "Color", em, "Color")
+    gl = n.new("ShaderNodeBsdfPrincipled", Roughness=0.03)
+    gl.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1)
+    add = n.new("ShaderNodeAddShader")
+    n.link(em, None, add, 0)
+    n.link(gl, None, add, 1)
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(add, None, out, "Surface")
+    scr = box("PhoneScreen", 0.066, 0.142, 0.0006, (at.x, at.y, at.z + 0.0083), mat, col, rot=(0, 0, rot))
+    return body

@@ -9,7 +9,8 @@ from .. import materials as M
 from .. import props as P
 from ..camera_rig import Anchors
 from ..util import box, cylinder
-from .common import Ctx, Room, curtain, outdoor_backdrop, place_card, scatter_prints, wall, window
+from .common import (Ctx, Room, crumbs, curtain, drink_ring, opt, outdoor_backdrop, place_card, scatter_prints,
+                     switched_on, wall, window)
 
 TABLE_Z = 0.77
 
@@ -50,8 +51,9 @@ def build(ctx: Ctx):
     wall("BackWall", col, walls, "y", Y1, X0, X1, 0, H, openings=[(win["c"], win["w"], win["b"], win["t"])])
     window("KitchenWindow", col, "y", Y1, win["c"], win["w"], win["b"], win["t"], inward=-1, panes=(2, 2))
     # net curtains: very sheer, half height (cafe curtains)
-    curtain("NetCurtain", col, "y", Y1, win["c"], win["w"] * 1.6, win["b"] + 0.02, win["b"] + 0.6, -1,
-            color="#f4f1ea", sheer=0.9, folds=22, gather=0.65)
+    if opt(ctx, "net_curtains", True):
+        curtain("NetCurtain", col, "y", Y1, win["c"], win["w"] * 1.6, win["b"] + 0.02, win["b"] + 0.6, -1,
+                color="#f4f1ea", sheer=0.9, folds=22, gather=0.65)
     side = dict(c=-0.9, w=0.9, b=0.95, t=2.0)
     wall("LeftWall", col, walls, "x", X0, Y0, Y1, 0, H, openings=[(side["c"], side["w"], side["b"], side["t"])])
     window("SideWindow", col, "x", X0, side["c"], side["w"], side["b"], side["t"], inward=1, panes=(2, 2))
@@ -76,7 +78,7 @@ def build(ctx: Ctx):
         pl.rotation_euler = (math.radians(80), 0, 0)
     # hanging pendant lamp (on in the evening)
     lights = []
-    if ctx.lights_on:
+    if switched_on(ctx, "pendant"):
         from ..world import kelvin_rgb
         import bpy
         ld = bpy.data.lights.new("Pendant", "POINT")
@@ -114,9 +116,9 @@ def build(ctx: Ctx):
     anchor = Vector((0.05, 0.2, surf))
     if placement == "leaning":
         lean = 16.0
-        # leaning against the teapot
-        P.teapot("Teapot", col, (anchor.x + 0.02, anchor.y + card_h * math.sin(math.radians(lean)) + 0.085, surf),
-                 math.radians(200))
+        # leaning against the jam jar; the teapot sits further back as a soft shape in the background
+        P.jar("Jam", col, (anchor.x + 0.01, anchor.y + card_h * math.sin(math.radians(lean)) + 0.036, surf))
+        P.teapot("Teapot", col, (anchor.x + 0.34, anchor.y + 0.33, surf), math.radians(200))
         hero, centre, normal = place_card(meta, "HeroPrint", col, anchor, math.radians(rng.uniform(-5, 5)), "leaning",
                                           lean)
         el = 5.0
@@ -137,12 +139,28 @@ def build(ctx: Ctx):
 
     # ------------------------------------------------------------------ props
     P.cup_and_saucer("Cup", col, (anchor.x - 0.22, anchor.y - 0.12, surf), math.radians(rng.uniform(0, 360)))
-    rack_point = Vector((0.42, 0.55, surf + 0.1))
-    if clutter > 0.2:
-        P.fruit_bowl("Fruit", col, (0.45, 0.55, surf), rng)
+    rack_point = Vector((anchor.x + 0.34, anchor.y + 0.33, surf + 0.08))
+    if clutter > 0.2 and opt(ctx, "fruit", True):
+        P.fruit_bowl("Fruit", col, (-0.42, 0.62, surf), rng)
     if clutter > 0.4:
-        P.jar("Jam", col, (-0.35, 0.42, surf))
-        P.vase_with_stems("Flowers", col, (-0.55, 0.62, surf), rng)
+        if placement != "leaning":
+            P.jar("Jam", col, (-0.35, 0.42, surf))
+        if opt(ctx, "flowers", True):
+            P.vase_with_stems("Flowers", col, (0.62, 0.68, surf), rng)
+    mess = opt(ctx, "mess", "some")
+    if mess in ("some", "lots"):
+        crumbs(col, Vector((anchor.x - 0.08, anchor.y - 0.1, surf)), 0.09, 40 if mess == "some" else 160, rng,
+               "#c48d4c", name="Crumbs")
+        _knife(col, Vector((anchor.x + 0.15, anchor.y - 0.13, surf)), math.radians(rng.uniform(15, 40)), jam=True)
+        _spoon(col, Vector((anchor.x - 0.3, anchor.y - 0.02, surf)), math.radians(rng.uniform(-30, 30)))
+    if mess == "lots":
+        plate = cylinder("TostPlate", 0.1, 0.012, (anchor.x + 0.3, anchor.y - 0.06, surf),
+                         M.ceramic("Plate", "#ece6d6", 0.05, 0.3, 0.3), col, 64, bevel=0.004)
+        _toast(col, Vector((anchor.x + 0.3, anchor.y - 0.06, surf + 0.012)), rng)
+        crumbs(col, Vector((anchor.x + 0.12, anchor.y + 0.02, surf)), 0.05, 120, rng, "#f4f1ea", (0.0004, 0.0009),
+               name="Sugar")
+        drink_ring(col, Vector((anchor.x - 0.15, anchor.y - 0.22, surf)), 0.04, name="TeaRing1")
+        drink_ring(col, Vector((anchor.x + 0.22, anchor.y + 0.14, surf)), 0.045, name="TeaRing2", strength=0.4)
     if clutter > 0.6:
         box("BreadBoard", 0.36, 0.22, 0.02, (0.6, 0.12, surf + 0.01), M.wood("Board", "oak", 0.0, 0.9, grain_axis="X"),
             col, bevel=0.005)
@@ -161,3 +179,86 @@ def build(ctx: Ctx):
     room = Room(Vector((X0, Y0, 0)), Vector((X1, Y1, H)))
     dust_box = (Vector((-1.0, -0.3, surf)), Vector((1.0, 1.4, surf + 1.0)))
     return dict(anchors=anchors, room=room, dust_box=dust_box, lights=lights, hero=hero)
+
+
+def _knife(col, at: Vector, rot: float, jam=False):
+    """Butter knife lying on the table, with a smear of jam on the blade."""
+    steel = M.metal("Cutlery", "#cfcfcf", rough=0.15, smudge=0.5, tarnish=0.05)
+    import bpy
+    root = bpy.data.objects.new("Knife", None)
+    col.objects.link(root)
+    root.location = at
+    root.rotation_euler = (0, 0, rot)
+    blade = box("KnifeBlade", 0.11, 0.018, 0.0025, (0.055, 0, 0.004), steel, col, bevel=0.0009)
+    blade.parent = root
+    handle = box("KnifeHandle", 0.1, 0.016, 0.009, (-0.05, 0, 0.0055), M.wood("KnifeHandle", "walnut", 0.6, 0.6), col,
+                 bevel=0.004, segments=4)
+    handle.parent = root
+    if jam:
+        j = box("JamSmear", 0.04, 0.012, 0.0012, (0.08, 0.001, 0.0058), M.ceramic("JamSmear", "#6e1422", 0.12, 0.0),
+                col, bevel=0.0005)
+        j.parent = root
+    return root
+
+
+def _spoon(col, at: Vector, rot: float):
+    import bpy
+    steel = M.metal("Cutlery", "#cfcfcf", rough=0.15, smudge=0.5, tarnish=0.05)
+    root = bpy.data.objects.new("Spoon", None)
+    col.objects.link(root)
+    root.location = at
+    root.rotation_euler = (0, 0, rot)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=32, ring_count=16, location=(0.045, 0, 0.004))
+    bowl = bpy.context.object
+    for c in bowl.users_collection:
+        c.objects.unlink(bowl)
+    col.objects.link(bowl)
+    bowl.scale = (0.018, 0.012, 0.004)
+    bowl.data.materials.append(steel)
+    bowl.parent = root
+    h = box("SpoonHandle", 0.09, 0.006, 0.0025, (-0.02, 0, 0.003), steel, col, bevel=0.001)
+    h.parent = root
+    return root
+
+
+def _toast(col, at: Vector, rng):
+    """A slice of toast with a bite out of it."""
+    import bmesh
+    import bpy
+    from ..util import mesh_object, srgb
+    mat = bpy.data.materials.new("Toast")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    b = nt.nodes.get("Principled BSDF")
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 220.0
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = srgb("#8a5524")
+    ramp.color_ramp.elements[1].color = srgb("#d9a25e")
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], b.inputs["Base Color"])
+    b.inputs["Roughness"].default_value = 0.85
+    b.inputs["Subsurface Weight"].default_value = 0.15
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.6
+    nt.links.new(noise.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    bm = bmesh.new()
+    pts = []
+    for i in range(40):
+        a = i / 40 * 2 * math.pi
+        r = 0.05 * (1.0 + 0.08 * math.cos(2 * a))
+        x, y = math.cos(a) * r, math.sin(a) * r * 1.1
+        if y > 0.035 and abs(x) < 0.025:  # the bite
+            y = 0.035 - (0.025 - abs(x)) * 0.6
+        pts.append(bm.verts.new((x, y, 0.0)))
+    f = bm.faces.new(pts)
+    ret = bmesh.ops.extrude_face_region(bm, geom=[f])
+    for v in [e for e in ret["geom"] if isinstance(e, bmesh.types.BMVert)]:
+        v.co.z += 0.012
+    o = mesh_object("Toast", bm, col, mat=mat)
+    o.location = at
+    o.rotation_euler = (0, 0, rng.uniform(0, 6.28))
+    from ..util import add_bevel
+    add_bevel(o, 0.002, 2, 40)
+    return o

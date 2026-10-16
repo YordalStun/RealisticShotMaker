@@ -340,3 +340,187 @@ def wallpaper(name="Wallpaper", base="#c9b99a", ink="#a8936e", stripe_scale=9.0)
     out = n.new("ShaderNodeOutputMaterial")
     n.link(b, None, out, "Surface")
     return mat
+
+
+# ---------------------------------------------------------------------------
+# Location options
+# ---------------------------------------------------------------------------
+
+def opt(ctx: "Ctx", key: str, default=None):
+    return ctx.job.get("location_options", {}).get(key, default)
+
+
+def switched_on(ctx: "Ctx", key: str, default="auto") -> bool:
+    """'auto' follows the time of day (lamps come on in the evening), 'on'/'off' force it."""
+    v = opt(ctx, key, default)
+    if v in (True, "on"):
+        return True
+    if v in (False, "off"):
+        return False
+    return ctx.lights_on
+
+
+# ---------------------------------------------------------------------------
+# Small details used by several sets
+# ---------------------------------------------------------------------------
+
+def steam(col, base: Vector, height=0.22, radius=0.03, name="Steam"):
+    """A wisp of rising steam: a volume whose density is animated noise drifting upwards."""
+    from ..util import Nodes, new_material
+    bpy.ops.mesh.primitive_cylinder_add(radius=radius * 2.2, depth=height, location=(base.x, base.y, base.z + height / 2))
+    o = bpy.context.object
+    o.name = name
+    for c in o.users_collection:
+        c.objects.unlink(o)
+    col.objects.link(o)
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+    # rising: subtract time from Z so the pattern drifts up
+    val = n.new("ShaderNodeValue")
+    drv = val.outputs[0].driver_add("default_value")
+    drv.driver.expression = "frame / 24.0 * 0.06"
+    sep = n.new("ShaderNodeSeparateXYZ")
+    n.link(tc, "Object", sep, "Vector")
+    z = n.math("SUBTRACT", (sep, "Z"), val)
+    comb = n.new("ShaderNodeCombineXYZ")
+    n.link(sep, "X", comb, "X")
+    n.link(sep, "Y", comb, "Y")
+    n.link(z, None, comb, "Z")
+    noise = n.new("ShaderNodeTexNoise", Scale=22.0, Detail=6.0, Roughness=0.6, Distortion=1.2, _noise_dimensions="4D")
+    n.link(comb, None, noise, "Vector")
+    n.link(n.math("MULTIPLY", val, 8.0), None, noise, "W")
+    wisps = n.ramp((noise, "Fac"), [(0.52, (0, 0, 0)), (0.7, (1, 1, 1))])
+    # fade towards the edges of the cylinder and towards the top
+    grad = n.new("ShaderNodeTexGradient", _gradient_type="SPHERICAL")
+    gmap = n.new("ShaderNodeMapping", Scale=(1.0 / (radius * 2.2), 1.0 / (radius * 2.2), 1.0 / (height * 0.6)))
+    n.link(tc, "Object", gmap, "Vector")
+    n.link(gmap, None, grad, "Vector")
+    dens = n.math("MULTIPLY", n.math("MULTIPLY", (wisps, "Color"), (grad, "Fac")), 3.0)
+    vol = n.new("ShaderNodeVolumePrincipled", Anisotropy=0.4)
+    vol.inputs["Color"].default_value = (0.95, 0.95, 0.95, 1)
+    n.link(dens, None, vol, "Density")
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(vol, None, out, "Volume")
+    o.data.materials.append(mat)
+    o.visible_shadow = False
+    return o
+
+
+def crumbs(col, centre: Vector, radius: float, count: int, rng, color="#c08a4a", size=(0.0008, 0.003), name="Crumb"):
+    """Scattered irregular bits (bread crumbs, sugar grains, eraser rubbings)."""
+    from ..util import srgb
+    mat = bpy.data.materials.get(f"{name}Mat")
+    if mat is None:
+        mat = bpy.data.materials.new(f"{name}Mat")
+        mat.use_nodes = True
+        b = mat.node_tree.nodes.get("Principled BSDF")
+        b.inputs["Base Color"].default_value = srgb(color)
+        b.inputs["Roughness"].default_value = 0.8
+        b.inputs["Subsurface Weight"].default_value = 0.2
+    bm = bmesh.new()
+    for _ in range(count):
+        a = rng.uniform(0, 2 * math.pi)
+        d = radius * math.sqrt(rng.random())
+        s = rng.uniform(*size)
+        ret = bmesh.ops.create_icosphere(bm, subdivisions=1, radius=s)
+        for v in ret["verts"]:
+            v.co.x *= rng.uniform(0.6, 1.4)
+            v.co.z *= rng.uniform(0.4, 0.9)
+            v.co += Vector((centre.x + math.cos(a) * d, centre.y + math.sin(a) * d, centre.z + s * 0.5))
+    return mesh_object(name, bm, col, mat=mat)
+
+
+def drink_ring(col, centre: Vector, radius: float, color="#5a3418", name="Ring", strength=0.6):
+    """A dried coffee/tea ring on a table: a very thin, translucent ring decal."""
+    from ..util import Nodes, new_material, srgb
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    tc = n.new("ShaderNodeTexCoord")
+    grad = n.new("ShaderNodeTexGradient", _gradient_type="SPHERICAL")
+    n.link(tc, "Object", grad, "Vector")
+    wob = n.new("ShaderNodeTexNoise", Scale=6.0, Detail=4.0)
+    n.link(tc, "Object", wob, "Vector")
+    g2 = n.math("ADD", (grad, "Fac"), n.math("MULTIPLY", n.math("SUBTRACT", (wob, "Fac"), 0.5), 0.12))
+    ring = n.ramp(g2, [(0.0, (0, 0, 0)), (0.06, (1, 1, 1)), (0.11, (0.15, 0.15, 0.15)), (0.9, (0.08, 0.08, 0.08)),
+                       (1.0, (0, 0, 0))])
+    b = n.new("ShaderNodeBsdfPrincipled", Roughness=0.35)
+    b.inputs["Base Color"].default_value = srgb(color)
+    n.link(n.math("MULTIPLY", (ring, "Color"), strength), None, b, "Alpha")
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    bpy.ops.mesh.primitive_circle_add(vertices=64, radius=radius, fill_type="NGON",
+                                      location=(centre.x, centre.y, centre.z + 0.0002))
+    o = bpy.context.object
+    o.name = name
+    for c in o.users_collection:
+        c.objects.unlink(o)
+    col.objects.link(o)
+    o.data.materials.append(mat)
+    o.visible_shadow = False
+    return o
+
+
+def cobweb_strands(col, anchors_pairs, rng, name="Cobweb"):
+    """Sagging silk threads between pairs of points; they glint when backlit."""
+    mat = bpy.data.materials.get("CobwebSilk")
+    if mat is None:
+        mat = bpy.data.materials.new("CobwebSilk")
+        mat.use_nodes = True
+        b = mat.node_tree.nodes.get("Principled BSDF")
+        b.inputs["Base Color"].default_value = (0.85, 0.85, 0.85, 1)
+        b.inputs["Roughness"].default_value = 0.25
+        b.inputs["Transmission Weight"].default_value = 0.6
+        b.inputs["Alpha"].default_value = 0.7
+    objs = []
+    for i, (a, b2) in enumerate(anchors_pairs):
+        curve = bpy.data.curves.new(f"{name}{i}", "CURVE")
+        curve.dimensions = "3D"
+        sp = curve.splines.new("POLY")
+        steps = 16
+        sp.points.add(steps)
+        sag = (b2 - a).length * rng.uniform(0.05, 0.15)
+        for k in range(steps + 1):
+            t = k / steps
+            p = a.lerp(b2, t) - Vector((0, 0, sag * 4 * t * (1 - t)))
+            sp.points[k].co = (p.x, p.y, p.z, 1)
+        curve.bevel_depth = 0.00012
+        o = bpy.data.objects.new(f"{name}{i}", curve)
+        link(o, col)
+        o.data.materials.append(mat)
+        o.visible_shadow = False
+        objs.append(o)
+    return objs
+
+
+def fairy_lights(col, points: list, count: int, rng, kelvin=2400.0, strength=30.0, name="FairyLights"):
+    """A string of tiny warm bulbs following a polyline (with sag between points)."""
+    from .. import materials as M
+    from ..util import cylinder_bm
+    wire = bpy.data.curves.new(f"{name}Wire", "CURVE")
+    wire.dimensions = "3D"
+    sp = wire.splines.new("POLY")
+    pts = []
+    for i in range(len(points) - 1):
+        a, b2 = points[i], points[i + 1]
+        for k in range(12):
+            t = k / 12
+            pts.append(a.lerp(b2, t) - Vector((0, 0, 0.03 * 4 * t * (1 - t))))
+    pts.append(points[-1])
+    sp.points.add(len(pts) - 1)
+    for k, p in enumerate(pts):
+        sp.points[k].co = (p.x, p.y, p.z, 1)
+    wire.bevel_depth = 0.0006
+    wo = bpy.data.objects.new(f"{name}Wire", wire)
+    link(wo, col)
+    wo.data.materials.append(M.plastic("FairyWire", "#1d2a1a", 0.5))
+    bulb_mat = M.emitter(f"{name}Bulb", kelvin, strength)
+    bm = bmesh.new()
+    total = len(pts) - 1
+    for i in range(count):
+        p = pts[int(i / count * total)]
+        ret = bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.0032)
+        for v in ret["verts"]:
+            v.co.z *= 1.5
+            v.co += p - Vector((0, 0, 0.004))
+    return mesh_object(f"{name}Bulbs", bm, col, mat=bulb_mat)

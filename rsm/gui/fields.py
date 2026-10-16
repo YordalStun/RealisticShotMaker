@@ -84,6 +84,13 @@ SECTIONS: dict[str, list[Field]] = {
     "Camera": [
         Field("camera.move", "Camera move", "combo", _opts(catalog.MOVES), group="Move"),
         Field("camera.duration", "Length", "dspin", minimum=2, maximum=60, step=0.5, suffix=" s", group="Move"),
+        Field("camera.cut_at", "Cut happens at", "slider", minimum=0.1, maximum=0.9, group="Close-up cut",
+              tip="Only for “Extreme close-up, then cut wider”: how far into the shot the cut comes."),
+        Field("camera.cut_to", "After the cut", "combo",
+              [(k, v.name) for k, v in catalog.MOVES.items() if k != "macro_cut"], group="Close-up cut",
+              tip="The camera move used for the wider part after the cut."),
+        Field("camera.macro_fill", "Close-up magnification", "slider", minimum=2.0, maximum=8.0, step=0.1,
+              suffix="×", group="Close-up cut", tip="How far into the picture the opening close-up goes."),
         Field("camera.move_amount", "Move distance", "slider", minimum=0.2, maximum=2.0, group="Move"),
         Field("camera.framing", "Framing", "combo", [(k, v[0]) for k, v in catalog.FRAMINGS.items()], group="Move"),
         Field("camera.angle", "Viewpoint angle", "slider", minimum=-45, maximum=45, step=1, suffix="°", group="Move"),

@@ -60,6 +60,7 @@ class SceneSpec:
     dust: float = 0.5                 # 0..1 floating dust in the air
     clutter: float = 0.7              # 0..1 how many props around the subject
     extra_photos: bool = True         # other photos lying around
+    options: dict = field(default_factory=dict)  # location-specific options, see catalog.LOCATIONS[..].options
     seed: int = 7
 
 
@@ -83,6 +84,10 @@ class CameraSpec:
     shutter_angle: float = 180.0      # motion blur, degrees. 0 disables
     focus_drift: float = 0.3          # 0..1 a human focus puller's small lag, overshoot and drift
     focus_target: str = "photo"       # photo | face (centre of the picture) | auto
+    # "macro_cut" move: an extreme close-up inside the picture, then a hard cut to a normal framing
+    cut_at: float = 0.4               # 0..1 point in the shot where the cut happens
+    cut_to: str = "push_in"           # the move used after the cut
+    macro_fill: float = 4.0           # how much bigger than the frame the print is in the close-up
 
 
 @dataclass
@@ -169,7 +174,7 @@ class ShotSpec:
 
     @classmethod
     def load(cls, path: str | Path) -> "ShotSpec":
-        return cls.from_json(Path(path).read_text(encoding="utf-8"))
+        return cls.from_json(Path(path).read_text(encoding="utf-8-sig"))  # tolerate a BOM from Windows editors
 
     def copy(self) -> "ShotSpec":
         return ShotSpec.from_dict(self.to_dict())

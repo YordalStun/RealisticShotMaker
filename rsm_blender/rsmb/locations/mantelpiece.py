@@ -11,7 +11,8 @@ from .. import props as P
 from ..camera_rig import Anchors
 from ..util import box, cylinder, link
 from ..world import kelvin_rgb
-from .common import Ctx, Room, animate_flicker, curtain, outdoor_backdrop, place_card, wall, wallpaper, window
+from .common import (Ctx, Room, animate_flicker, curtain, fairy_lights, opt, outdoor_backdrop, place_card,
+                     switched_on, wall, wallpaper, window)
 
 SHELF_Z = 1.22
 
@@ -53,8 +54,9 @@ def build(ctx: Ctx):
     for i in range(3):
         lg = cylinder(f"Log{i}", 0.055, 0.55, (rng.uniform(-0.1, 0.1), fy + 0.02 - i * 0.04, 0.12 + i * 0.05), logs, col, 24)
         lg.rotation_euler = (0, math.radians(90), math.radians(rng.uniform(-14, 14)))
-    ember_mat = M.emitter("Embers", 1500.0, 8.0)
-    for i in range(14):
+    fire_state = opt(ctx, "fire", "lit")
+    ember_mat = M.emitter("Embers", 1500.0, 8.0 if fire_state != "out" else 0.0)
+    for i in range(14 if fire_state != "out" else 6):
         bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=rng.uniform(0.012, 0.03),
                                               location=(rng.uniform(-0.28, 0.28), fy + rng.uniform(-0.05, 0.08), 0.08))
         e = bpy.context.object
@@ -63,19 +65,20 @@ def build(ctx: Ctx):
         col.objects.link(e)
         e.data.materials.append(ember_mat)
     lights = []
-    fire_on = s.get("time_of_day", "evening") in ("evening", "night", "golden")
+    fire_on = fire_state != "out"
     if fire_on:
         ld = bpy.data.lights.new("FireGlow", "AREA")
         ld.shape = "RECTANGLE"
         ld.size, ld.size_y = 0.7, 0.25
-        ld.energy = 140
-        ld.color = kelvin_rgb(1700)
+        ld.energy = 140 if fire_state == "lit" else 35
+        ld.color = kelvin_rgb(1700 if fire_state == "lit" else 1300)
         fire = bpy.data.objects.new("FireGlow", ld)
         link(fire, col)
         fire.location = (0, fy - 0.08, 0.25)
         fire.rotation_euler = (math.radians(-60), 0, 0)
         lights.append(fire)
-        animate_flicker(fire, 140, 0.35, fps, fs, fe, seed=11, speed=1.4)
+        animate_flicker(fire, ld.energy, 0.35 if fire_state == "lit" else 0.1, fps, fs, fe, seed=11,
+                        speed=1.4 if fire_state == "lit" else 0.3)
 
     # gilt mirror above the mantel
     gilt = M.metal("Gilt", "#c9a356", rough=0.28, smudge=0.5, tarnish=0.55)
@@ -87,36 +90,67 @@ def build(ctx: Ctx):
         box(f"MirrorFrame{i}", sx, 0.04, sz, (c[0], fy - 0.035, c[1]), gilt, col, bevel=0.012, segments=4)
 
     surf = SHELF_Z
-    shelf_front = fy - 0.24
     meta = ctx.job["polaroid"]
     card_h = meta["card_mm"][1] / 1000.0
-    # the print leans against the mirror frame / wall at the back of the shelf
-    lean = 12.0
-    back_y = fy - 0.04
-    anchor = Vector((0.08, back_y - card_h * math.sin(math.radians(lean)) - 0.002, surf))
-    hero, centre, normal = place_card(meta, "HeroPrint", col, anchor, math.radians(rng.uniform(-4, 4)), "leaning", lean)
-    el = 4.0
-    view = Vector((-0.15, -1.0, 0.0)).normalized()
+    # the camera looks along the mantel so the clock, candles and frames recede into bokeh behind the print;
+    # the print is turned to face the camera and leans against a small frame standing behind it
+    view = Vector((-0.86, -0.5, 0.0)).normalized()
+    yaw = math.atan2(view.x, -view.y)  # card normal (sin yaw, -cos yaw) faces the camera
+    lean = 14.0
+    anchor = Vector((-0.42, fy - 0.15, surf))
+    back = Vector((-view.x, -view.y, 0.0))
+    support = anchor + back * (card_h * math.sin(math.radians(lean)) + 0.012)
+    frames = ctx.job.get("frame_photos", [])
+    P.picture_frame("SupportFrame", col, tuple(support), yaw, frames[1] if len(frames) > 1 else None, size=(0.1, 0.13),
+                    wood_preset="walnut", lean=6)
+    hero, centre, normal = place_card(meta, "HeroPrint", col, anchor, yaw + math.radians(rng.uniform(-3, 3)),
+                                      "leaning", lean)
+    el = 5.0
     vd = Vector((view.x * math.cos(math.radians(el)), view.y * math.cos(math.radians(el)), math.sin(math.radians(el))))
     apparent = card_h * max(0.35, abs(normal.dot(vd)))
 
-    P.carriage_clock("CarriageClock", col, (-0.25, fy - 0.12, surf), math.radians(8))
-    rack_point = Vector((-0.25, fy - 0.12, surf + 0.07))
-    lit = s.get("time_of_day", "evening") in ("evening", "night")
-    for i, (x, h) in enumerate(((0.45, 0.16), (0.55, 0.12))):
-        _, cl = P.candle(f"Candle{i}", col, (x, fy - 0.12, surf), h, 0.017, lit=lit)
+    P.carriage_clock("CarriageClock", col, (-0.05, fy - 0.13, surf), math.radians(-20))
+    rack_point = Vector((-0.05, fy - 0.13, surf + 0.07))
+    lit = switched_on(ctx, "candles")
+    for i, (x, h) in enumerate(((0.22, 0.16), (0.32, 0.12), (0.4, 0.2))):
+        _, cl = P.candle(f"Candle{i}", col, (x, fy - 0.12 + 0.02 * i, surf), h, 0.017, lit=lit)
         if cl:
             lights.append(cl)
             animate_flicker(cl, cl.data.energy, 0.25, fps, fs, fe, seed=20 + i, speed=2.2)
-    frames = ctx.job.get("frame_photos", [])
     if clutter > 0.3 and frames:
-        P.picture_frame("MantelFrame", col, (-0.55, fy - 0.1, surf), math.radians(12), frames[0], size=(0.13, 0.17),
+        P.picture_frame("MantelFrame", col, (0.55, fy - 0.09, surf), math.radians(-10), frames[0], size=(0.13, 0.17),
                         wood_preset="mahogany", lean=8)
     if clutter > 0.55:
         P.vase_with_stems("MantelVase", col, (0.72, fy - 0.12, surf), rng, color="#d9cfb8")
-        if len(frames) > 1:
-            P.picture_frame("MantelFrame2", col, (0.28, fy - 0.08, surf), math.radians(-6), frames[1], size=(0.1, 0.13),
-                            wood_preset="walnut", lean=8)
+    if opt(ctx, "christmas", False):
+        front = fy - 0.245
+        pts = [Vector((x, front, surf - 0.02)) for x in (-0.8, -0.4, 0.0, 0.4, 0.8)]
+        fairy_lights(col, pts, 60, rng, name="MantelFairyLights")
+        garland_mat = M.fabric("Garland", "#1f3a22", threads_per_m=200, rough=0.9, sheen=0.8)
+        for i in range(4):
+            a, b2 = pts[i], pts[i + 1]
+            mid = (a + b2) / 2 - Vector((0, 0, 0.05))
+            curve = bpy.data.curves.new(f"Garland{i}", "CURVE")
+            curve.dimensions = "3D"
+            sp = curve.splines.new("BEZIER")
+            sp.bezier_points.add(2)
+            for bp, co in zip(sp.bezier_points, (a, mid, b2)):
+                bp.co = co
+                bp.handle_left_type = bp.handle_right_type = "AUTO"
+            curve.bevel_depth = 0.022
+            curve.bevel_resolution = 4
+            g = bpy.data.objects.new(f"Garland{i}", curve)
+            link(g, col)
+            g.data.materials.append(garland_mat)
+            disp = g.modifiers.new("Needles", "DISPLACE")
+            tex = bpy.data.textures.new(f"Needles{i}", "CLOUDS")
+            tex.noise_scale = 0.01
+            disp.texture = tex
+            disp.strength = 0.012
+        for i, x in enumerate((0.48, 0.62, 0.78)):
+            card = box(f"XmasCard{i}", 0.1, 0.002, 0.14, (x, fy - 0.06 - i * 0.01, surf + 0.07),
+                       M.paper(f"XmasCard{i}", rng.choice(["#b23a2e", "#2f5a3a", "#efe8d8"]), 0.6, 0.1), col)
+            card.rotation_euler = (math.radians(-8), 0, math.radians(rng.uniform(-20, 20)))
     if ctx.lights_on:
         # a standard lamp in the corner of the room
         _, fl = P.bankers_lamp("CornerLamp", col, (1.9, -0.4, 1.05), 0.0, on=True, power=12.0)
@@ -129,7 +163,7 @@ def build(ctx: Ctx):
     anchors = Anchors(
         subject=centre, card_normal=normal, card_height=apparent, view_dir=vd, rack_point=rack_point,
         tilt_from=Vector((0, fy - 0.03, mz)), pan_from=Vector((-0.25, fy - 0.12, surf + 0.07)),
-        reveal_target=Vector((0, fy - 0.2, surf + 0.1)), min_height=surf + 0.012,
+        reveal_target=Vector((0.1, fy - 0.15, surf + 0.1)), min_height=surf + 0.012,
     )
     room = Room(Vector((X0, Y0, 0)), Vector((X1, Y1, H)))
     dust_box = (Vector((-0.9, fy - 1.2, surf - 0.2)), Vector((0.9, fy, surf + 0.8)))

@@ -280,6 +280,61 @@ class FocusPuller:
         return self.pos
 
 
+_SEE_THROUGH = ("Haze", "DustMotes", "_glass", "Glass", "Portal", "HeroPrint")
+
+
+def _clear_view(p: Pose, anchors: Anchors) -> bool:
+    """True if the straight line from the camera to the subject is unobstructed."""
+    scene = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+    eye = p.eye.copy()
+    if anchors.min_height is not None and eye.z < anchors.min_height:
+        eye.z = anchors.min_height
+    target = anchors.subject
+    d = target - eye
+    dist = d.length
+    if dist < 1e-4:
+        return True
+    d.normalize()
+    origin = eye.copy()
+    travelled = 0.0
+    for _ in range(16):
+        hit, loc, _n, _i, obj, _m = scene.ray_cast(dg, origin, d, distance=dist - travelled)
+        if not hit:
+            return True
+        travelled += (loc - origin).length
+        if travelled > dist - 0.03:
+            return True
+        if obj is not None and any(k in obj.name for k in _SEE_THROUGH):
+            origin = loc + d * 1e-4
+            continue
+        return False
+    return True
+
+
+def macro_move(a: Anchors, D_macro: float):
+    """Slowly explore the picture itself: a gentle drift across the image while easing in."""
+    S = a.subject
+    base = a.view_dir.normalized()
+    right = base.cross(Vector((0, 0, 1)))
+    if right.length < 1e-6:
+        right = Vector((1, 0, 0))
+    right.normalize()
+    up = right.cross(base).normalized()
+    # surface directions of the print itself (so the drift stays on the picture plane)
+    n = a.card_normal.normalized()
+    r_s = (right - n * right.dot(n)).normalized()
+    u_s = (up - n * up.dot(n)).normalized()
+    span = a.card_height * 0.12
+
+    def f(t):
+        e = lerp(t, smootherstep(t), 0.6)
+        tgt = S + r_s * span * lerp(-0.5, 0.35, e) + u_s * span * lerp(0.25, -0.1, e)
+        eye = tgt + base * D_macro * lerp(1.04, 0.97, e)
+        return Pose(eye, tgt, tgt)
+    return f
+
+
 def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_start: int, frame_end: int,
                    sensor: tuple[float, float], fill: float, seed: int, aspect: float):
     """Keyframe camera transform and focus for every frame."""
@@ -290,11 +345,32 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
     # user adjustments of the default viewpoint
     base = rot_z(anchors.view_dir, math.radians(float(cam_spec.get("angle", 0.0))))
     base = elevate(base, float(cam_spec.get("height", 0.0)) * 25.0)
-    a = Anchors(**{**anchors.__dict__, "view_dir": base})
     move = cam_spec["move"]
     amount = float(cam_spec.get("move_amount", 1.0))
-    fn = make_move(move, a, D, amount)
-    handheld = float(cam_spec.get("handheld", 0.0)) + (1.0 if move == "handheld" else 0.0)
+    is_cut = move == "macro_cut"
+    cut_t = min(0.9, max(0.1, float(cam_spec.get("cut_at", 0.4))))
+    cut_to = cam_spec.get("cut_to", "push_in")
+    if cut_to == "macro_cut":
+        cut_to = "push_in"
+    D_macro = framing_distance(anchors.card_height, float(cam_spec.get("macro_fill", 4.0)), focal, sensor_h_eff)
+
+    def build(view_dir):
+        a = Anchors(**{**anchors.__dict__, "view_dir": view_dir})
+        if not is_cut:
+            return make_move(move, a, D, amount), None, None
+        fa = macro_move(a, D_macro)
+        fb = make_move(cut_to, a, D, amount)
+        return (lambda t: fa(t / cut_t) if t < cut_t else fb((t - cut_t) / (1 - cut_t))), fa, fb
+
+    # make sure nothing solid sits between the lens and the photo anywhere along the move;
+    # if something does, raise the camera a little at a time (like an operator would)
+    for _ in range(14):
+        fn, fa, fb = build(base)
+        if all(_clear_view(fn(t), anchors) for t in (0.0, 0.25, 0.5, 0.75, 1.0)):
+            break
+        base = elevate(base, 3.0)
+
+    handheld = float(cam_spec.get("handheld", 0.0)) + (1.0 if move == "handheld" or cut_to == "handheld" and is_cut else 0.0)
     wobble = 0.0 if move == "locked_off" else float(cam_spec.get("rig_wobble", 0.0))
     if move == "locked_off":
         handheld = 0.0
@@ -308,33 +384,73 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
 
     n = frame_end - frame_start + 1
     dt = 1.0 / fps
-    prev_q = None
-    for i in range(n):
-        frame = frame_start + i
-        t = i / max(1, n - 1)
-        time_s = i * dt
-        p = fn(t)
+    cut_frame = None
+    if is_cut:
+        cut_frame = frame_start + int(math.ceil(cut_t * (n - 1)))
+
+    def solve(p: Pose, time_s: float, prev_q):
         eye = p.eye.copy()
         if anchors.min_height is not None and eye.z < anchors.min_height:
             eye.z = anchors.min_height
         off, (pitch, yaw, roll) = shake.sample(time_s, handheld, wobble)
         m = look_at_matrix(eye, p.target)
-        # apply roll and shake in camera space
-        rot = m.to_3x3()
-        rot = rot @ Matrix.Rotation(p.roll + roll, 3, "Z") @ Matrix.Rotation(pitch, 3, "X") @ Matrix.Rotation(yaw, 3, "Y")
-        world_off = m.to_3x3() @ off
+        rot = m.to_3x3() @ Matrix.Rotation(p.roll + roll, 3, "Z") @ Matrix.Rotation(pitch, 3, "X") \
+            @ Matrix.Rotation(yaw, 3, "Y")
+        loc = eye + m.to_3x3() @ off
         q = rot.to_quaternion()
         if prev_q is not None and prev_q.dot(q) < 0:
             q.negate()
+        fwd = rot @ Vector((0, 0, -1))
+        dist = max(0.02, (p.focus_point - loc).dot(fwd))
+        return loc, q, dist
+
+    prev_q = None
+    for i in range(n):
+        frame = frame_start + i
+        t = i / max(1, n - 1)
+        time_s = i * dt
+        if frame == cut_frame:
+            puller.pos = None  # a new shot: the focus is simply set, not pulled
+            puller.vel = 0.0
+        loc, q, target_dist = solve(fn(t), time_s, prev_q)
         prev_q = q
-        cam_obj.location = eye + world_off
+        cam_obj.location = loc
         cam_obj.rotation_quaternion = q
         cam_obj.keyframe_insert("location", frame=frame)
         cam_obj.keyframe_insert("rotation_quaternion", frame=frame)
-        # focus distance along the optical axis
-        fwd = rot @ Vector((0, 0, -1))
-        target_dist = max(0.02, (p.focus_point - (eye + world_off)).dot(fwd))
-        fdist = puller.step(target_dist, dt, time_s)
-        cam.dof.focus_distance = fdist
+        cam.dof.focus_distance = puller.step(target_dist, dt, time_s)
         cam.dof.keyframe_insert("focus_distance", frame=frame)
+
+    if cut_frame is not None and frame_start < cut_frame <= frame_end:
+        # a clean cut: hold the close-up until half a frame before the cut, then jump. Motion blur
+        # of the last close-up frame and the first wide frame never mixes the two shots.
+        half = cut_frame - 0.5
+        loc, q, dist = solve(fb(0.0), (half - frame_start) * dt, prev_q=None)
+        cam_obj.location = loc
+        cam_obj.rotation_quaternion = q
+        cam_obj.keyframe_insert("location", frame=half)
+        cam_obj.keyframe_insert("rotation_quaternion", frame=half)
+        cam.dof.focus_distance = dist
+        cam.dof.keyframe_insert("focus_distance", frame=half)
+        for owner in (cam_obj, cam):
+            ad = owner.animation_data
+            if not ad or not ad.action:
+                continue
+            for fc in _fcurves(ad.action):
+                for kp in fc.keyframe_points:
+                    if abs(kp.co.x - (cut_frame - 1)) < 1e-3:
+                        kp.interpolation = "CONSTANT"
     return D
+
+
+def _fcurves(action):
+    """F-curves of an action (Blender 4.4+ layered actions or the classic list)."""
+    fcs = getattr(action, "fcurves", None)
+    if fcs is not None and len(fcs):
+        return list(fcs)
+    out = []
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for bag in getattr(strip, "channelbags", []):
+                out.extend(bag.fcurves)
+    return out
