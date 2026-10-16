@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import catalog
+from . import __version__, catalog
 from .polaroid import generate, px_per_mm_for
 from .polaroid.film import develop
 from .polaroid.imaging import rng as np_rng, save_rgb
@@ -147,6 +147,7 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     sw, sh = sensor_for(spec)
     job = dict(
         version=1,
+        app_version=__version__,
         spec=spec.to_dict(),
         resolved=resolved,
         framing_fill=fill,

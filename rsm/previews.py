@@ -88,6 +88,22 @@ def store_frames(job_path: Path, move: str, dest_root: Path) -> Path:
     return dest
 
 
+def _unfinished_job(work: Path, spec: ShotSpec) -> Path | None:
+    """A preview job for the same move and settings that was stopped part way: carry on with it so the
+    frames already rendered aren't thrown away."""
+    from . import __version__
+    want = json.loads(json.dumps(spec.to_dict()))
+    for jp in sorted(work.glob(f"{spec.output.name}_*/job.json"), reverse=True):
+        try:
+            job = json.loads(jp.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if job.get("spec") == want and job.get("app_version") == __version__:
+            return jp
+        shutil.rmtree(jp.parent, ignore_errors=True)  # different settings or an older version: start again
+    return None
+
+
 def build(blender: str, moves: list[str] | None = None, dest_root: Path | None = None,
           on_progress: Callable[[str, int, int, object], None] | None = None,
           seconds: float = PREVIEW_SECONDS, fps: float = PREVIEW_FPS, samples: int = PREVIEW_SAMPLES,
@@ -101,7 +117,7 @@ def build(blender: str, moves: list[str] | None = None, dest_root: Path | None =
         if should_stop():
             break
         spec = preview_spec(move, seconds, fps, samples)
-        job = build_job(spec, work, preview=False)
+        job = _unfinished_job(work, spec) or build_job(spec, work, preview=False)
         proc = RenderProcess(blender, job,
                              lambda p, m=move, i=i: on_progress and on_progress(m, i, len(moves), p)).start()
         if proc.wait() != 0:
