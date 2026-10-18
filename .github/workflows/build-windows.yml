@@ -43,6 +43,10 @@ jobs:
         run: pytest -q
       - name: Build app with PyInstaller
         run: pyinstaller --noconfirm packaging/RealisticShotMaker.spec
+      - name: Render server launcher
+        shell: pwsh
+        run: |
+          Set-Content -Path "dist\RealisticShotMaker\Render Server.cmd" -Value "@start `"`" `"%~dp0RealisticShotMaker.exe`" server"
       - name: Smoke test the frozen app (command line)
         shell: pwsh
         run: |

@@ -13,6 +13,8 @@ def main():
         from .cli import main as cli_main
         return cli_main(sys.argv[1:])
     from .gui.app import main as gui_main
+    if len(sys.argv) > 1 and sys.argv[1] == "server":
+        return gui_main(sys.argv[:1], server=True)
     return gui_main()
 
 

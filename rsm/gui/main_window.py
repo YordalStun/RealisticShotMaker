@@ -153,6 +153,8 @@ class MainWindow(QMainWindow):
         for a in (act_new, act_open, act_save, act_save_as):
             fm.addAction(a)
         fm.addSeparator()
+        fm.addAction(QAction("Export for render server…", self, triggered=self.export_pack))
+        fm.addSeparator()
         fm.addAction(QAction("Quit", self, shortcut=QKeySequence.Quit, triggered=self.close))
         bm = menu.addMenu("&Blender")
         bm.addAction(QAction("Find Blender…", self, triggered=self.choose_blender))
@@ -231,6 +233,7 @@ class MainWindow(QMainWindow):
         self.queue_panel.load_requested.connect(self._load_spec)
         self.queue_panel.selected_changed.connect(self._queue_selected)
         self.rq.progressed.connect(self._queue_progress)
+        self.rq.changed.connect(lambda: self.output_viewer.update_progress(self.output_viewer.item))
         self.queue_panel.regrade_requested.connect(self._regrade)
         self.queue_panel.when_done.setCurrentIndex(max(0, self.queue_panel.when_done.findData(
             self.settings.value("when_queue_done", "nothing"))))
@@ -898,6 +901,21 @@ class MainWindow(QMainWindow):
         if path:
             self.spec.save(path)
             self.current_file = path
+
+    def export_pack(self):
+        """One file with everything the shot needs, for the render server on another machine."""
+        from ..pack import EXT, export_pack
+        path, _ = QFileDialog.getSaveFileName(self, "Export for render server", f"{self.spec.output.name}{EXT}",
+                                              f"Render packs (*{EXT})")
+        if not path:
+            return
+        try:
+            out = export_pack(self.spec, path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Couldn't export", str(exc))
+            return
+        self.blender_label.setText(f"Saved {out.name}. Copy it into the render server's watch folder, or drag "
+                                   "it onto the server window.")
 
     def apply_preset(self, name: str):
         p = PRESETS.get(name)

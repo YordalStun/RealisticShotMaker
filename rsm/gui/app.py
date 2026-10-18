@@ -39,7 +39,7 @@ QScrollArea { border: none; }
 """
 
 
-def main(argv=None):
+def main(argv=None, server: bool = False):
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(argv or sys.argv)
     app.setApplicationName("RealisticShotMaker")
@@ -59,15 +59,19 @@ def main(argv=None):
     pal.setColor(QPalette.ToolTipText, QColor("#efe5d8"))
     app.setPalette(pal)
     app.setStyleSheet(STYLE)
-    from .main_window import MainWindow
-    w = MainWindow()
+    if server:
+        from .server_window import ServerWindow
+        w = ServerWindow()
+    else:
+        from .main_window import MainWindow
+        w = MainWindow()
     w.show()
     code = app.exec()
     # tear down in a safe order while Qt is still alive (letting Python do it at exit can crash on Windows)
     import shiboken6
     w.wait_for_threads()
-    for obj in (w.preview_popup, w):
-        if shiboken6.isValid(obj):
+    for obj in (getattr(w, "preview_popup", None), w):
+        if obj is not None and shiboken6.isValid(obj):
             shiboken6.delete(obj)
     app.processEvents()
     return code

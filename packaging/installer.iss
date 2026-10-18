@@ -25,6 +25,7 @@ Source: "..\dist\RealisticShotMaker\*"; DestDir: "{app}"; Flags: recursesubdirs 
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\RealisticShotMaker.exe"
+Name: "{group}\{#AppName} Render Server"; Filename: "{app}\RealisticShotMaker.exe"; Parameters: "server"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\RealisticShotMaker.exe"; Tasks: desktopicon
 
 [Tasks]
