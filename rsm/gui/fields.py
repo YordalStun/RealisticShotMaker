@@ -98,6 +98,9 @@ SECTIONS: dict[str, list[Field]] = {
               tip="The camera move used for the wider part after the cut."),
         Field("camera.macro_fill", "Close-up magnification", "slider", minimum=2.0, maximum=8.0, step=0.1,
               suffix="×", group="Close-up cut", tip="How far into the picture the opening close-up goes."),
+        Field("camera.cut_in_motion", "Already moving after a cut", "check", group="Move",
+              tip="Any shot with a cut: the part after the cut starts mid-move, as if the camera had been rolling "
+                  "before it, instead of starting still and easing in. Off = it eases in from a standstill."),
         Field("camera.move_amount", "Move distance", "slider", minimum=0.2, maximum=2.0, group="Move"),
         Field("camera.framing", "Framing", "combo", [(k, v[0]) for k, v in catalog.FRAMINGS.items()], group="Move"),
         Field("camera.angle", "Viewpoint angle", "slider", minimum=-45, maximum=45, step=1, suffix="°", group="Move"),

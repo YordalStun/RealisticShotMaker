@@ -89,6 +89,7 @@ class CameraSpec:
     cut_at: float = 0.4               # 0..1 point in the shot where the cut happens
     cut_to: str = "push_in"           # the move used after the cut
     macro_fill: float = 4.0           # how much bigger than the frame the print is in the close-up
+    cut_in_motion: bool = True        # after a cut the camera is already moving (no ramp up from standstill)
 
 
 @dataclass

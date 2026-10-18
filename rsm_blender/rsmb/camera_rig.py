@@ -357,6 +357,38 @@ def macro_move(a: Anchors, D_macro: float):
     return f
 
 
+def _speed(a: Pose, b: Pose) -> float:
+    """How much the picture changes between two poses (camera travel plus where it points)."""
+    return (b.eye - a.eye).length + 0.5 * (b.target - a.target).length + 0.2 * abs(b.zoom - a.zoom)
+
+
+def roll_into_cuts(prog: Program, samples: int = 96) -> Program:
+    """After a cut, start each move mid-stride, the way an editor cuts into a shot that's already moving.
+
+    Every move eases in from a standstill, which looks wrong straight after a cut: the new shot sits still
+    for a beat before it gets going. For each segment that begins with a cut, find how far into its own
+    motion it reaches its normal pace and begin there instead, so frame one after the cut is already moving.
+    Segments that are already moving at the cut (a whip landing) start where they are."""
+    for seg in prog.segments:
+        if not seg.cut_in:
+            continue
+        f = seg.fn
+        poses = [f(k / samples) for k in range(samples + 1)]
+        steps = [_speed(poses[k], poses[k + 1]) for k in range(samples)]
+        mean = sum(steps) / samples
+        if mean < 1e-7:
+            continue  # a locked-off hold: nothing to roll into
+        u0 = 0.0
+        for k, sp in enumerate(steps):
+            if sp >= 0.8 * mean:
+                u0 = k / samples
+                break
+        u0 = min(u0, 0.35)   # never skip more than about a third of the move
+        if u0 > 0.0:
+            seg.fn = (lambda t, f=f, u0=u0: f(u0 + (1.0 - u0) * t))
+    return prog
+
+
 def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_start: int, frame_end: int,
                    sensor: tuple[float, float], fill: float, seed: int, aspect: float):
     """Keyframe camera transform, focus and zoom for every frame. Returns (framing distance, program)."""
@@ -395,8 +427,12 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
             for sg in fb.segments:  # the move after the cut keeps its own segments (and its own cuts)
                 segs.append(Segment(cut_t + sg.t0 * (1 - cut_t), cut_t + sg.t1 * (1 - cut_t), sg.fn,
                                     cut_in=sg.cut_in or sg.t0 == 0.0))
-            return Program(segs, zoomable=fb.zoomable, occluders=fb.occluders)
-        return build_program(move, a, D, amount, focal, sensor_h_eff, fill, cam_spec)
+            prog_ = Program(segs, zoomable=fb.zoomable, occluders=fb.occluders)
+        else:
+            prog_ = build_program(move, a, D, amount, focal, sensor_h_eff, fill, cam_spec)
+        if cam_spec.get("cut_in_motion", True):
+            roll_into_cuts(prog_)
+        return prog_
 
     # make sure nothing solid sits between the lens and the photo anywhere along the move;
     # if something does, raise the camera a little at a time (like an operator would)
