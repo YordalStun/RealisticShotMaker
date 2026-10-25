@@ -735,3 +735,110 @@ def text_obj(col, body, font, size, loc, rot, mat, name="Writing", align="CENTER
     o.rotation_euler = rot
     o.data.materials.append(mat)
     return o
+
+
+def _group(name: str) -> str:
+    return name.split("_")[0]
+
+
+def make_room_for_frame(anchors):
+    """A picture frame is much bigger and deeper than an instant print, and the sets dress props around a
+    print's footprint. Move the frame off walls and big furniture it cuts into, and take away the small props
+    it would go through (a real set dresser would move them)."""
+    from mathutils.bvhtree import BVHTree
+    hero = bpy.data.objects.get("HeroPrint")
+    if hero is None or not hero.get("rsm_frame"):
+        return
+    skip = ("Haze", "Dust", "Mote", "Steam", "Portal", "Cobweb", "Fairy", "Glow", "Sky", "Mood")
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+
+    def tree(o):
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        mw = o.matrix_world
+        t = BVHTree.FromPolygons([mw @ v.co for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+        ev.to_mesh_clear()
+        return t
+
+    def bbox(objs):
+        pts = [o.matrix_world @ Vector(c) for o in objs for c in o.bound_box]
+        return (Vector([min(p[i] for p in pts) for i in range(3)]), Vector([max(p[i] for p in pts) for i in range(3)]))
+
+    family = [hero] + list(hero.children)
+    others = [o for o in bpy.data.objects if o.type == "MESH" and o not in family and not o.hide_render
+              and not any(w in o.name for w in skip)]
+    groups: dict[str, list] = {}
+    for o in others:
+        groups.setdefault(_group(o.name), []).append(o)
+    trees = {o.name: tree(o) for o in others}
+    normal = (hero.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
+    flat = abs(normal.z) > 0.7
+    lo, _ = bbox(family)
+
+    def hits():
+        bpy.context.view_layer.update()
+        ft = [tree(o) for o in family]
+        out = set()
+        for o in others:
+            if o.name not in trees:
+                continue
+            if any(t.overlap(trees[o.name]) for t in ft):
+                out.add(o)
+        return out
+
+    def big(o):
+        mn, mx = bbox(groups[_group(o.name)])
+        return (mx - mn).length > 0.32 or any(w in o.name for w in ("Wall", "Floor", "Table", "Desk", "Trunk", "Mirror",
+                                                                     "Chimney", "Shelf", "Mantel", "Shoebox"))
+
+    moved = Vector()
+    for _ in range(40):
+        h = [o for o in hits() if big(o)]
+        # the surface it stands or lies on doesn't count
+        h = [o for o in h if bbox([o])[1].z > lo.z + moved.z + 0.004]
+        if not h or moved.length > 0.2:
+            break
+        if flat:
+            mn, mx = bbox(h)
+            away = hero.matrix_world.translation - (mn + mx) / 2
+            away.z = 0
+        else:
+            away = Vector((normal.x, normal.y, 0))
+        step = away.normalized() * 0.006 if away.length > 1e-6 else Vector((0, 0, 0.003))
+        hero.location += step
+        moved += step
+    gone = set()
+    for o in hits():
+        if not big(o):
+            gone.add(_group(o.name))
+    for g in gone:
+        for o in groups.get(g, []):
+            bpy.data.objects.remove(o, do_unlink=True)
+    if flat and gone:
+        # whatever it was resting on may be gone: let it down onto what's left
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        mn, mx = bbox(family)
+        gap = None
+        for i in range(5):
+            for j in range(5):
+                x = mn.x + (mx.x - mn.x) * (0.1 + 0.8 * i / 4)
+                y = mn.y + (mx.y - mn.y) * (0.1 + 0.8 * j / 4)
+                ok, loc, _, _, _, _ = bpy.context.scene.ray_cast(dg, Vector((x, y, mn.z - 0.0005)), Vector((0, 0, -1)),
+                                                                 distance=0.2)
+                if ok:
+                    d = mn.z - loc.z
+                    gap = d if gap is None else min(gap, d)
+        if gap is not None and gap > 0.001:
+            step = Vector((0, 0, -(gap - 0.0003)))
+            hero.location += step
+            moved += step
+    if moved.length > 0:
+        anchors.subject = anchors.subject + moved
+        for p in PLACED_PRINTS:
+            if p["name"] == hero.name:
+                p["centre"] = p["centre"] + moved
+    if gone:
+        log_removed = sorted(gone)
+        print(f"rsm: made room for the frame (moved {moved.length * 1000:.0f} mm, cleared {', '.join(log_removed)})")

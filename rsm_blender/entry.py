@@ -74,6 +74,7 @@ def build_scene(job: dict):
     loc_common.PLACED_PRINTS.clear()
     built = mod.build(ctx)
     anchors: camera_rig.Anchors = built["anchors"]
+    loc_common.make_room_for_frame(anchors)
     room = built["room"]
     anchors.extra = dict(anchors.extra or {}, room=(tuple(room.min), tuple(room.max)),
                          photos=list(loc_common.PLACED_PRINTS))

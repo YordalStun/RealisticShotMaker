@@ -311,7 +311,7 @@ def _frame_glass(name: str):
 def _lip(fr: dict) -> tuple[float, float]:
     """How far back the glass sits behind the frame's front, and the rebate width (mm)."""
     face = _front_profile(fr.get("profile", "flat"), float(fr["moulding_mm"]))
-    return min(float(fr["depth_mm"]) - 7.0, face[-1][1] + 4.0), 6.0
+    return min(float(fr["depth_mm"]) - 9.0, face[-1][1] + 4.0), 6.0
 
 
 def print_setback_mm(meta: dict) -> float:
@@ -373,6 +373,7 @@ def build_framed(meta: dict, name: str = "Polaroid", col=None, stand_deg: float 
     back = box(f"{name}_Backing", gw / 1000, 0.0025, gh / 1000, (0, (y + 1.25) / 1000, H / 2000),
                M.paper(f"{name}_hardboard", "#6a5440", 0.9, age=0.4), col)
     child(back)
+    yb = y + 2.6          # the back of the backing board, recessed inside the moulding
     # the strut: a tapered leg hinged two-thirds of the way up the back
     leg_mat = M.paper(f"{name}_strut", "#3a2e24", 0.8, age=0.2)
     zh = H * 0.62
@@ -383,12 +384,12 @@ def build_framed(meta: dict, name: str = "Polaroid", col=None, stand_deg: float 
         s = zh * 0.5
         foot = Vector((0, (D + s) / 1000, s * math.tan(L) / 1000))
     else:
-        foot = Vector((0, (D + 2.0) / 1000, zh * 0.08 / 1000))
-    hinge = Vector((0, (D + 1.0) / 1000, zh / 1000))
+        foot = Vector((0, yb / 1000, zh * 0.08 / 1000))      # folded flat against the back
+    hinge = Vector((0, yb / 1000, zh / 1000))
     bm = bmesh.new()
     axis = (foot - hinge)
     sideways = Vector((1, 0, 0))
-    thick = axis.cross(sideways).normalized() * 0.0015
+    thick = sideways.cross(axis).normalized() * 0.0015     # away from the backing
     vs = []
     for t_, half in ((0.0, sw * 0.32), (1.0, sw * 0.5)):
         c = hinge + axis * t_

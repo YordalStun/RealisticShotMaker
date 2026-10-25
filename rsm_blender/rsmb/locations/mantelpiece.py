@@ -101,8 +101,12 @@ def build(ctx: Ctx):
     back = Vector((-view.x, -view.y, 0.0))
     support = anchor + back * (card_h * math.sin(math.radians(lean)) + 0.012)
     frames = ctx.job.get("frame_photos", [])
-    P.picture_frame("SupportFrame", col, tuple(support), yaw, frames[1] if len(frames) > 1 else None, size=(0.1, 0.13),
-                    wood_preset="walnut", lean=6)
+    if meta.get("frame"):
+        # a framed photo stands on its own strut: nothing to lean on, and it needs the room for its depth
+        anchor = anchor + view * 0.02
+    else:
+            P.picture_frame("SupportFrame", col, tuple(support), yaw, frames[1] if len(frames) > 1 else None,
+                        size=(0.1, 0.13), wood_preset="walnut", lean=6)
     hero, centre, normal = place_card(meta, "HeroPrint", col, anchor, yaw + math.radians(rng.uniform(-3, 3)),
                                       "leaning", lean)
     el = 5.0
