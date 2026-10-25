@@ -67,7 +67,7 @@ class RenderJob(QObject):
                 def note(msg):
                     self.progress.message = msg
                     self.updated.emit(self.progress)
-                self.job_path = build_job(self.spec, preview=self.mode in ("still", "draft"), progress=note)
+                self.job_path = build_job(self.spec, preview=self.mode in ("still", "draft", "path"), progress=note)
             if self.cancelled:
                 self.finished.emit(False, "Cancelled")
                 return
@@ -87,6 +87,9 @@ class RenderJob(QObject):
             if self.mode == "still":
                 out = str(Path(self.job_path).parent / "work" / "preview")
                 extra = ["--still", f"{self.still_at:.4f}", "--still-out", out]
+            if self.mode == "path":
+                path_out = str(Path(self.job_path).parent / "camera_path.json")
+                extra = ["--export-path", path_out]
             last_frame = {"p": ""}
 
             def on_update(p: Progress):
@@ -107,6 +110,10 @@ class RenderJob(QObject):
             if self.mode == "still":
                 self.output = self.proc.progress.last_frame_path
                 self.finished.emit(True, self.output)
+                return
+            if self.mode == "path":
+                self.output = path_out
+                self.finished.emit(True, path_out)
                 return
             if self.mode == "draft":  # played straight from its frames, nothing to encode
                 import json

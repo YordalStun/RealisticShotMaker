@@ -60,6 +60,39 @@ def test_gui_edits_each_shot_separately():
     w._shot_remove()
     assert len(shotlist.shots_of(w.spec)) == 2
     w.close()
+    w.wait_for_threads()
     shiboken6.delete(w.preview_popup)
+    shiboken6.delete(w)
+    app.processEvents()
+
+
+def test_path_view_draws_a_shot_list(tmp_path):
+    """The 3D view can draw a multi-shot path without errors, from outside and through the camera."""
+    import json
+    from PySide6.QtWidgets import QApplication
+    import shiboken6
+    from rsm.gui.path_view import PathPanel
+    app = QApplication.instance() or QApplication([])
+    box = [[x, y, z] for x in (0, 1) for y in (0, 1) for z in (0, 1)]
+    frames = [{"p": [0.5 + 0.01 * i, -1.5, 1.0], "f": [0, 1, -0.2], "u": [0, 0, 1], "fov": 0.5, "fd": 1.2,
+               "shot": 0 if i < 5 else 1} for i in range(10)]
+    data = {"version": 1, "fps": 24, "aspect": 1.78, "frames": frames,
+            "shots": [{"move": "macro_drift", "t0": 0, "t1": 0.5}, {"move": "push_in", "t0": 0.5, "t1": 1}],
+            "boxes": [{"name": "Desk", "c": box, "col": [0.5, 0.4, 0.3], "room": False},
+                      {"name": "Floor", "c": [[x * 4 - 2, y * 4 - 2, z * 0.05 - 0.05] for x, y, z in box],
+                       "col": [0.4, 0.4, 0.4], "room": True}],
+            "prints": [{"quad": [[0.4, 0.4, 1.0], [0.5, 0.4, 1.0], [0.5, 0.4, 1.1], [0.4, 0.4, 1.1]], "hero": True,
+                        "image": ""}]}
+    f = tmp_path / "path.json"
+    f.write_text(json.dumps(data))
+    w = PathPanel()
+    w.resize(640, 400)
+    w.load(str(f))
+    assert "2 shots" in w.status.text() and "1 cut" in w.status.text()
+    w.show_shot(1)
+    assert w.view.frame == 5
+    w.grab()
+    w.through.setChecked(True)
+    w.grab()
     shiboken6.delete(w)
     app.processEvents()

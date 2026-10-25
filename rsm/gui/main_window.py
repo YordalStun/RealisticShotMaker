@@ -20,6 +20,7 @@ from ..estimate import estimate
 from ..spec import ShotSpec
 from .draft_player import DraftPlayer
 from .output_viewer import OutputViewer
+from .path_view import PathPanel
 from .shot_timeline import ShotListEditor
 from .. import shotlist
 from .fields import SECTIONS, Field, get_attr, set_attr
@@ -123,6 +124,12 @@ class MainWindow(QMainWindow):
         self.bridge.preview_progress.connect(lambda m: self.blender_label.setText(m))
         self.bridge.previews_done.connect(self._previews_done)
         self._preview_build_running = False
+        self.path_job: RenderJob | None = None
+        self._path_ticket = 0
+        self._path_stale = True
+        self._path_timer = QTimer(self)
+        self._path_timer.setSingleShot(True)
+        self._path_timer.timeout.connect(lambda: self.start_path(manual=False))
         self._draft_timer = QTimer(self)
         self._draft_timer.setSingleShot(True)
         self._draft_timer.timeout.connect(lambda: self.start_draft(manual=False))
@@ -204,6 +211,10 @@ class MainWindow(QMainWindow):
         self.view_tabs = QTabWidget()
         self.view_tabs.addTab(self.monitor, "Preview frame")
         self.view_tabs.addTab(self.output_viewer, "Render output")
+        self.path_panel = PathPanel()
+        self.path_panel.update_requested.connect(lambda: self.start_path(manual=True))
+        self.view_tabs.addTab(self.path_panel, "Camera path (3D)")
+        self.view_tabs.currentChanged.connect(lambda _: self._path_stale and self._schedule_path(0))
         top = QHBoxLayout()
         top.addWidget(self.view_tabs, 1)
         top.addLayout(card_box)
@@ -357,6 +368,7 @@ class MainWindow(QMainWindow):
     def _shot_selected(self, i: int):
         self.sel_shot = i
         self._load_into_widgets()
+        self.path_panel.show_shot(i)
 
     def _shot_lengths(self, lengths: list):
         shots = shotlist.shots_of(self.spec)
@@ -885,7 +897,54 @@ class MainWindow(QMainWindow):
         self._schedule_draft()
 
     # ------------------------------------------------------------------ draft preview
+    # ------------------------------------------------------------------ 3D camera path
+    def _schedule_path(self, delay_ms: int = 1500):
+        """Rebuild the 3D path after edits, but only while its tab is showing (else just remember it's stale)."""
+        if not hasattr(self, "path_panel"):
+            return
+        self._path_stale = True
+        if self.view_tabs.currentWidget() is self.path_panel and self.path_panel.auto.isChecked():
+            self._path_timer.start(delay_ms)
+
+    def start_path(self, manual: bool = False):
+        if not (self.blender and os.path.exists(self.blender)):
+            if manual:
+                self._need_blender()
+            else:
+                self.path_panel.status.setText("The 3D path needs Blender. Use the Blender menu to download or find it.")
+            return
+        if self.path_job is not None:
+            self.path_job.cancel()
+        self._path_ticket += 1
+        ticket = self._path_ticket
+        s = self.spec.copy()
+        s.output.resolution = "p360"
+        s.output.fps = min(24.0, float(s.output.fps))
+        s.output.name = "camera_path"
+        s.output.output_dir = str(app_data_dir() / "paths")
+        import shutil
+        shutil.rmtree(app_data_dir() / "paths", ignore_errors=True)
+        job = RenderJob(s, self.blender, "path")
+        self.path_job = job
+        self._path_stale = False
+        self.path_panel.status.setText("Building the set and the camera path…")
+
+        def done(ok, msg, t=ticket):
+            if t != self._path_ticket:
+                return
+            self.path_job = None
+            if ok:
+                self.path_panel.load(msg)
+                self.path_panel.view.highlight = getattr(self, "sel_shot", -1) if self._is_list() else -1
+            else:
+                self.path_panel.status.setText("Couldn't build the camera path: " + msg)
+        job.finished.connect(done)
+        th = JobThread(job)
+        self.threads[id(job)] = th
+        th.start()
+
     def _schedule_draft(self):
+        self._schedule_path()
         if getattr(self, "_loading", False) or not hasattr(self, "draft_player"):
             return
         if self.draft_player.auto.isChecked():
@@ -1031,7 +1090,8 @@ class MainWindow(QMainWindow):
 
     def wait_for_threads(self, ms: int = 8000):
         """Give background work (renders being stopped, drafts, previews) a moment to wind down."""
-        threads = list(self.threads.values()) + [i.thread for i in self.rq.items if i.thread is not None]
+        threads = (list(self.threads.values()) + [i.thread for i in self.rq.items if i.thread is not None]
+                   + list(getattr(self, "_preview_threads", [])))
         for th in threads:
             try:
                 if th.isRunning():

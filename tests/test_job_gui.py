@@ -39,6 +39,7 @@ def test_gui_starts():
     w.apply_preset("Attic discovery")
     assert w.spec.scene.location == "attic_trunk"
     w.close()
+    w.wait_for_threads()
     _dispose(app, w)
 
 

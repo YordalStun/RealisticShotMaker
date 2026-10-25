@@ -1,4 +1,4 @@
 numpy>=1.24
 Pillow>=10.0
-PySide6>=6.6
+PySide6>=6.6,<6.12  # 6.12.0 corrupts None's refcount on Python 3.11 when painting (crash)
 imageio-ffmpeg>=0.5

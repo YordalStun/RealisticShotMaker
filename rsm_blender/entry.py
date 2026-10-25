@@ -38,6 +38,8 @@ def parse_args():
     ap.add_argument("--still-out", default=None)
     ap.add_argument("--regrade", action="store_true", help="re-run the film lab on existing EXR frames")
     ap.add_argument("--save-blend", default=None)
+    ap.add_argument("--export-path", default=None, help="write the camera path and a simplified set (JSON) "
+                    "for the app's 3D view, then stop without rendering")
     ap.add_argument("--frames", default=None, help="comma separated frame numbers to render")
     ap.add_argument("--crop", default=None, help="x0,y0,x1,y1 fractions: render only this window of the frame "
                     "(full-resolution detail check)")
@@ -128,6 +130,7 @@ def build_scene(job: dict):
                        for s in shots))
     src = lens.build_osl(lens_def, float(cam_spec["focal_mm"]), character, ca_scale, zoomable=zoomable)
     lens.apply_lens(cam_data, src, job["paths"]["work"])
+    cam_data["rsm_zoomable"] = bool(zoomable)
     aspect = res["width"] / res["height"]
     camera_rig.animate_camera(cam, cam_spec, anchors, float(res["fps"]), int(res["frame_start"]),
                               int(res["frame_end"]), (sw, sh), float(job["framing_fill"]),
@@ -149,6 +152,7 @@ def build_scene(job: dict):
         device = render.enable_gpu(spec["output"].get("device", "auto"))
     log("device", device=device)
     if eevee or (device.startswith("GPU:") and ":OPTIX:" not in device + ":"):
+        cam_data["rsm_zoomable"] = False   # zoom moves to the focal length below
         # OSL custom cameras need the CPU or OptiX; elsewhere use Blender's own lens with matching settings
         cam_data.type = "PERSP"
         cam_data.dof.aperture_blades = int(lens_def.get("blades", 9)) if lens_def.get("blade_curvature", 1) < 0.95 else 0
@@ -230,6 +234,10 @@ def main():
     log("scene_built", seconds=round(time.time() - t0, 1), objects=len(bpy.data.objects))
     if args.save_blend:
         bpy.ops.wm.save_as_mainfile(filepath=args.save_blend)
+    if args.export_path:
+        from rsmb import path_export
+        log("path_done", path=path_export.export(job, args.export_path, scene))
+        return
     if args.still is not None:
         f = fs + int(round(args.still * (fe - fs)))
         scene.frame_set(f)
