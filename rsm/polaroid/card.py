@@ -11,6 +11,7 @@ and a metadata dict used by Blender to bend, curl and fold the card mesh.
 from __future__ import annotations
 
 import json
+import dataclasses
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,7 @@ from . import film as filmmod
 from .handwriting import render_caption
 from .imaging import (Canvas, bezier, blur, coords, fbm, hex_to_rgb, lerp, rng, rounded_rect_sdf, save_gray,
                       save_rgb, smoothstep, value_noise)
-from .photos import get_photo
+from .photos import photo_aspect, get_photo
 
 
 @dataclass
@@ -69,8 +70,73 @@ def _signed_line(x, y, x0, y0, x1, y1):
     return ((x - x0) * dy - (y - y0) * dx) / L
 
 
-def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
+@dataclass
+class Layout:
+    """Where everything sits on the print, in mm. Instant films have fixed layouts; 'fit to the photo' and
+    framed photographic prints work theirs out from the photo."""
+    card_mm: tuple
+    image_origin_mm: tuple
+    image_mm: tuple
+    chemistry: str
+    frame: dict | None = None      # framed prints: the frame around the print (outer size etc.)
+
+
+def _fit(w: float, h: float, aspect: float) -> tuple[float, float]:
+    """A w×h window reshaped to `aspect`, keeping about the same area (so the print doesn't balloon)."""
+    area = w * h
+    nw = math.sqrt(area * aspect)
+    return nw, nw / aspect
+
+
+def layout_for(p: PolaroidSpec) -> Layout:
     ft = catalog.FILM_TYPES.get(p.film, catalog.FILM_TYPES["600"])
+    if p.print_type != "framed":
+        if not p.fit_photo_aspect:
+            return Layout(tuple(ft.card_mm), tuple(ft.image_origin_mm), tuple(ft.image_mm), ft.chemistry)
+        # same borders as the film, the picture window takes the photo's own shape
+        a = photo_aspect(p.photo)
+        iw, ih = _fit(ft.image_mm[0], ft.image_mm[1], a)
+        left, top = ft.image_origin_mm
+        right = ft.card_mm[0] - ft.image_mm[0] - left
+        bottom = ft.card_mm[1] - ft.image_mm[1] - top
+        return Layout((round(left + iw + right, 2), round(top + ih + bottom, 2)), (left, top),
+                      (round(iw, 2), round(ih, 2)), ft.chemistry)
+    # a photographic print in a picture frame
+    name, long_mm, short_mm = catalog.FRAME_SIZES.get(p.frame_size, catalog.FRAME_SIZES["6x4"])
+    a = photo_aspect(p.photo)
+    if p.fit_photo_aspect:
+        pw, ph = (long_mm, long_mm / a) if a >= 1 else (long_mm * a, long_mm)
+    else:
+        pw, ph = (long_mm, short_mm) if a >= 1 else (short_mm, long_mm)
+    style = catalog.FRAME_STYLES.get(p.frame_style, catalog.FRAME_STYLES["oak"])
+    m = style.moulding_mm
+    if p.frame_mat:
+        overlap = 3.0
+        vis_w, vis_h = pw - 2 * overlap, ph - 2 * overlap
+        border = round(0.22 * min(pw, ph))
+        inner_w, inner_h = vis_w + 2 * border, vis_h + 2 * border
+    else:
+        rebate = 5.0                     # the frame's lip hides the print's edges
+        vis_w, vis_h = pw - 2 * rebate, ph - 2 * rebate
+        border = 0.0
+        inner_w, inner_h = vis_w, vis_h
+    outer_w, outer_h = inner_w + 2 * m, inner_h + 2 * m
+    frame = dict(style=style.id, finish=style.finish, profile=style.profile, moulding_mm=m,
+                 depth_mm=style.depth_mm, mat=bool(p.frame_mat), mat_border_mm=border,
+                 outer_mm=[round(outer_w, 2), round(outer_h, 2)], inner_mm=[round(inner_w, 2), round(inner_h, 2)],
+                 window_mm=[round(vis_w, 2), round(vis_h, 2)], print_mm=[round(pw, 2), round(ph, 2)])
+    # a thin white border, as on most photo prints (the mat or the frame's lip covers it)
+    return Layout((round(pw, 2), round(ph, 2)), (2.0, 2.0), (round(pw - 4, 2), round(ph - 4, 2)), ft.chemistry, frame)
+
+
+def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
+    ft = layout_for(p)
+    framed = ft.frame is not None
+    if framed:
+        # a photographic print behind glass: no hand caption on the front, no instant-film edge chemistry,
+        # and it lies flat in the frame
+        p = dataclasses.replace(p, caption_pen="none", chemical_edge=0.0, curl=0.0, dog_ear=0.0, tape=False,
+                                pin_hole=False)
     ppm = float(px_per_mm)
     cw_mm, ch_mm = ft.card_mm
     W, H = int(round(cw_mm * ppm)), int(round(ch_mm * ppm))
@@ -373,6 +439,7 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
         film=p.film,
         card_mm=[cw_mm, ch_mm],
         image_rect_mm=[ft.image_origin_mm[0], ft.image_origin_mm[1], ft.image_mm[0], ft.image_mm[1]],
+        kind="framed" if framed else "instant",
         px_per_mm=ppm,
         size_px=[W, H],
         creases=creases_meta,
@@ -383,6 +450,14 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
         gloss=gloss,
         thickness_mm=1.0 if ft.chemistry == "integral" else 0.8,
     )
+    if framed:
+        # to the sets the framed photo is one object the size of the frame: place it like a print
+        fr = ft.frame
+        ow, oh = fr["outer_mm"]
+        vw, vh = fr["window_mm"]
+        meta.update(frame=fr, print_mm=[cw_mm, ch_mm], print_image_rect_mm=meta["image_rect_mm"],
+                    card_mm=[ow, oh], image_rect_mm=[(ow - vw) / 2, (oh - vh) / 2, vw, vh],
+                    thickness_mm=fr["depth_mm"], curl=0.0)
     return PolaroidMaps(np.clip(color, 0, 1), alpha, np.clip(rough, 0.02, 1), np.clip(height, 0, 1), back,
                         back_alpha, meta)
 
@@ -390,12 +465,49 @@ def generate(p: PolaroidSpec, px_per_mm: float = 12.0) -> PolaroidMaps:
 def preview_image(p: PolaroidSpec, height_px: int = 640):
     """Quick composited preview (PIL RGBA image) for the GUI."""
     from PIL import Image
-    ft = catalog.FILM_TYPES.get(p.film, catalog.FILM_TYPES["600"])
-    ppm = max(1.5, height_px / ft.card_mm[1])
+    ft = layout_for(p)
+    fr = ft.frame
+    ppm = max(1.5, height_px / (fr["outer_mm"][1] if fr else ft.card_mm[1]))
     maps = generate(p, ppm)
     rgb = (np.clip(maps.color, 0, 1) * 255).astype(np.uint8)
     a = (np.clip(maps.alpha, 0, 1) * 255).astype(np.uint8)
-    return Image.fromarray(np.dstack([rgb, a]), "RGBA")
+    im = Image.fromarray(np.dstack([rgb, a]), "RGBA")
+    return _frame_preview(im, fr, ppm) if fr else im
+
+
+FINISH_RGB = {"oak": (176, 132, 84), "walnut": (82, 52, 34), "black": (28, 27, 26), "white": (226, 222, 212),
+              "gold": (184, 146, 70), "silver": (186, 188, 190), "pine": (210, 172, 118)}
+
+
+def _frame_preview(print_im, fr: dict, ppm: float):
+    """A quick picture of the framed photo for the app (the real frame is modelled in Blender)."""
+    from PIL import Image, ImageDraw
+    ow, oh = (int(round(v * ppm)) for v in fr["outer_mm"])
+    iw, ih = (int(round(v * ppm)) for v in fr["inner_mm"])
+    vw, vh = (int(round(v * ppm)) for v in fr["window_mm"])
+    out = Image.new("RGBA", (ow, oh), (0, 0, 0, 0))
+    d = ImageDraw.Draw(out)
+    base = FINISH_RGB.get(fr["finish"], (150, 120, 90))
+    m = int(round(fr["moulding_mm"] * ppm))
+    # four bevelled sides: light from the top left
+    for k, shade in enumerate((1.18, 0.8, 0.72, 1.08)):     # top, right, bottom, left
+        c = tuple(min(255, int(v * shade)) for v in base) + (255,)
+        pts = [[(0, 0), (ow, 0), (ow - m, m), (m, m)], [(ow, 0), (ow, oh), (ow - m, oh - m), (ow - m, m)],
+               [(0, oh), (ow, oh), (ow - m, oh - m), (m, oh - m)], [(0, 0), (0, oh), (m, oh - m), (m, m)]][k]
+        d.polygon(pts, fill=c)
+    x0, y0 = (ow - iw) // 2, (oh - ih) // 2
+    if fr["mat"]:
+        d.rectangle([x0, y0, x0 + iw, y0 + ih], fill=(236, 230, 216, 255))
+    px, py = (ow - print_im.width) // 2, (oh - print_im.height) // 2
+    window = Image.new("L", (ow, oh), 0)
+    ImageDraw.Draw(window).rectangle([(ow - vw) // 2, (oh - vh) // 2, (ow + vw) // 2, (oh + vh) // 2], fill=255)
+    layer = Image.new("RGBA", (ow, oh), (0, 0, 0, 0))
+    layer.paste(print_im, (px, py))
+    out.paste(layer, (0, 0), Image.composite(layer, Image.new("RGBA", (ow, oh)), window).split()[3])
+    if fr["mat"]:   # the bevel of the mat's window catches the light
+        d.rectangle([(ow - vw) // 2 - 2, (oh - vh) // 2 - 2, (ow + vw) // 2 + 2, (oh + vh) // 2 + 2],
+                    outline=(250, 247, 238, 255), width=max(1, int(ppm * 1.2)))
+    return out
 
 
 def px_per_mm_for(output_height_px: int, frame_fill: float, card_h_mm: float, cap: float = 40.0) -> float:

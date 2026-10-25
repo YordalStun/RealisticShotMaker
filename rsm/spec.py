@@ -19,6 +19,11 @@ SPEC_VERSION = 1
 
 @dataclass
 class PolaroidSpec:
+    print_type: str = "instant"       # instant (polaroid/instax) | framed (a photo print in a picture frame)
+    frame_style: str = "oak"          # see catalog.FRAME_STYLES (framed only)
+    frame_size: str = "6x4"           # see catalog.FRAME_SIZES (framed only)
+    frame_mat: bool = True            # card mount (passe-partout) around the photo (framed only)
+    fit_photo_aspect: bool = False    # reshape the picture window (and the card/frame) to the photo's own shape
     film: str = "600"                 # see catalog.FILM_TYPES
     photo: str = "builtin:beach"      # file path or builtin:<id>
     photo_zoom: float = 1.0           # >1 crops in

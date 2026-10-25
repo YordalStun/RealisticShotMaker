@@ -266,6 +266,24 @@ PHOTO_DIR = Path(__file__).resolve().parent.parent / "assets" / "photos"
 REAL_PHOTOS = {"cat": "cat.png", "coffee": "coffee.png"}
 
 
+def photo_aspect(source: str) -> float:
+    """Width / height of the original photo (built-in painted scenes count as a 3:2 landscape snap)."""
+    try:
+        if source.startswith("builtin:"):
+            key = source.split(":", 1)[1]
+            if key not in REAL_PHOTOS:
+                return 1.5
+            path = PHOTO_DIR / REAL_PHOTOS[key]
+        else:
+            path = Path(source)
+        with Image.open(path) as im:
+            im = ImageOps.exif_transpose(im)
+            w, h = im.size
+        return max(0.2, min(5.0, w / max(1, h)))
+    except Exception:
+        return 1.5
+
+
 def get_photo(source: str, w: int, h: int, zoom=1.0, ox=0.0, oy=0.0, seed: int = 1) -> np.ndarray:
     """Return the photo for a polaroid as sRGB float RGB at w×h."""
     if source.startswith("builtin:") and source.split(":", 1)[1] in REAL_PHOTOS:

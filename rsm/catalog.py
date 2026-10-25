@@ -17,6 +17,38 @@ class Option:
 # Polaroid
 # ---------------------------------------------------------------------------
 
+PRINT_TYPES = {
+    "instant": "Instant photo (Polaroid / Instax)",
+    "framed": "Photo in a picture frame",
+}
+
+
+@dataclass(frozen=True)
+class FrameStyle(Option):
+    moulding_mm: float = 20.0     # face width of the frame
+    depth_mm: float = 22.0
+    finish: str = "oak"           # oak | walnut | black | white | gold | silver | pine
+    profile: str = "flat"         # flat | rounded | stepped | ornate
+
+
+FRAME_STYLES: dict[str, FrameStyle] = {f.id: f for f in [
+    FrameStyle("oak", "Oak", "Plain solid oak, softly rounded edges.", 20.0, 22.0, "oak", "rounded"),
+    FrameStyle("walnut", "Dark walnut", "Rich dark wood with a stepped inner edge.", 24.0, 24.0, "walnut", "stepped"),
+    FrameStyle("black", "Black modern", "Thin satin-black gallery frame.", 14.0, 24.0, "black", "flat"),
+    FrameStyle("white", "White painted", "Painted wood, a little chipped at the corners.", 22.0, 20.0, "white", "rounded"),
+    FrameStyle("gold", "Ornate gold", "Grandma's gilded frame with raised beads and patina.", 34.0, 30.0, "gold", "ornate"),
+    FrameStyle("silver", "Silver", "Polished silver-plate photo frame, slightly tarnished.", 12.0, 14.0, "silver", "stepped"),
+    FrameStyle("pine", "Rustic pine", "Light knotty pine, matt.", 26.0, 22.0, "pine", "flat"),
+]}
+
+FRAME_SIZES = {
+    # id: (name, long side mm, short side mm) of the photographic print
+    "6x4": ("6×4 in (15×10 cm) print", 152.0, 102.0),
+    "7x5": ("7×5 in (18×13 cm) print", 178.0, 127.0),
+    "10x8": ("10×8 in (25×20 cm) print", 254.0, 203.0),
+}
+
+
 @dataclass(frozen=True)
 class FilmType(Option):
     card_mm: tuple[float, float] = (88.0, 107.0)     # width, height
