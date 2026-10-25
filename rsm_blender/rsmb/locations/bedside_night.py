@@ -143,7 +143,7 @@ def build(ctx: Ctx):
     card_h = meta["card_mm"][1] / 1000.0
     anchor = Vector((tx + 0.03, ty - 0.08, surf))
     placement = s.get("placement", "leaning")
-    if ctx.spec["camera"]["move"] == "top_down" and placement == "leaning":
+    if ctx.top_down and placement == "leaning":
         placement = "flat"
     if placement == "leaning":
         lean = 14.0

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, catalog
+from . import __version__, catalog, shotlist
 from .polaroid import generate, px_per_mm_for
 from .polaroid.film import develop
 from .polaroid.imaging import rng as np_rng, save_rgb
@@ -122,11 +122,11 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     resolved = resolve(spec)
     framing_name, fill = catalog.FRAMINGS.get(spec.camera.framing, catalog.FRAMINGS["close"])
     film = catalog.FILM_TYPES.get(spec.polaroid.film, catalog.FILM_TYPES["600"])
-    tex_fill = fill
+    shots = shotlist.resolve(spec)
+    tex_fill = max(fill, max(s["fill"] for s in shots))
     cap = 40.0
-    if spec.camera.move == "macro_cut" or spec.camera.framing == "extreme_close":
-        # the close-up fills the screen with a small part of the print: it needs a lot more texture detail
-        tex_fill = max(fill, spec.camera.macro_fill if spec.camera.move == "macro_cut" else fill)
+    if tex_fill > 1.0:
+        # a close-up fills the screen with a small part of the print: it needs a lot more texture detail
         cap = 56.0
     ppm = px_per_mm_for(resolved["height"], tex_fill, film.card_mm[1], cap=24.0 if preview else cap)
 
@@ -169,6 +169,7 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
         extra_prints=extras,
         frame_photos=frame_photos,
         location_options=catalog.location_options(spec.scene.location, spec.scene.options),
+        shots=shots,
         paths=dict(root=str(job_dir), work=str(work), exr=str(job_dir / "exr"), frames=str(job_dir / "frames"),
                    fonts=str(Path(__file__).resolve().parent / "assets" / "fonts")),
         created=stamp,

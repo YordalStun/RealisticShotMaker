@@ -389,6 +389,23 @@ def roll_into_cuts(prog: Program, samples: int = 96) -> Program:
     return prog
 
 
+def _shot_list(cam_spec: dict, focal: float, fill: float) -> list[dict]:
+    """The job's resolved shot list, or one built from the plain camera settings (older jobs)."""
+    shots = cam_spec.get("_shots")
+    if shots:
+        return shots
+    base = dict(move=cam_spec["move"], framing=cam_spec.get("framing", "close"), focal_mm=focal,
+                fstop=float(cam_spec["fstop"]), angle=float(cam_spec.get("angle", 0.0)),
+                height=float(cam_spec.get("height", 0.0)), move_amount=float(cam_spec.get("move_amount", 1.0)),
+                macro_fill=float(cam_spec.get("macro_fill", 4.0)), fill=fill)
+    if cam_spec["move"] == "macro_cut":
+        cut = min(0.9, max(0.1, float(cam_spec.get("cut_at", 0.4))))
+        to = cam_spec.get("cut_to", "push_in")
+        return [{**base, "move": "macro_drift", "fill": base["macro_fill"], "t0": 0.0, "t1": cut},
+                {**base, "move": "push_in" if to == "macro_cut" else to, "t0": cut, "t1": 1.0}]
+    return [{**base, "t0": 0.0, "t1": 1.0}]
+
+
 def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_start: int, frame_end: int,
                    sensor: tuple[float, float], fill: float, seed: int, aspect: float):
     """Keyframe camera transform, focus and zoom for every frame. Returns (framing distance, program)."""
@@ -408,31 +425,45 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         anchors = Anchors(**{**anchors.__dict__,
                              "card_height": anchors.card_height * max(0.35, abs(nrm.dot(view0))) / old_dot})
         D = framing_distance(anchors.card_height, fill, focal, sensor_h_eff)
-    # user adjustments of the default viewpoint
-    base = rot_z(view0, math.radians(float(cam_spec.get("angle", 0.0))))
-    base = elevate(base, float(cam_spec.get("height", 0.0)) * 25.0)
-    move = cam_spec["move"]
-    amount = float(cam_spec.get("move_amount", 1.0))
-    cut_t = min(0.9, max(0.1, float(cam_spec.get("cut_at", 0.4))))
-    cut_to = cam_spec.get("cut_to", "push_in")
-    if cut_to == "macro_cut":
-        cut_to = "push_in"
-    D_macro = framing_distance(anchors.card_height, float(cam_spec.get("macro_fill", 4.0)), focal, sensor_h_eff)
+    shots = _shot_list(cam_spec, focal, fill)
+    focal_base = focal
+    extra_elev = [0.0]
 
-    def build(view_dir) -> Program:
-        a = Anchors(**{**anchors.__dict__, "view_dir": view_dir})
-        if move == "macro_cut":
-            fb = build_program(cut_to, a, D, amount, focal, sensor_h_eff, fill, cam_spec)
-            segs = [Segment(0.0, cut_t, macro_move(a, D_macro))]
-            for sg in fb.segments:  # the move after the cut keeps its own segments (and its own cuts)
-                segs.append(Segment(cut_t + sg.t0 * (1 - cut_t), cut_t + sg.t1 * (1 - cut_t), sg.fn,
-                                    cut_in=sg.cut_in or sg.t0 == 0.0))
-            prog_ = Program(segs, zoomable=fb.zoomable, occluders=fb.occluders)
-        else:
-            prog_ = build_program(move, a, D, amount, focal, sensor_h_eff, fill, cam_spec)
+    def shot_base(sh) -> Vector:
+        v = rot_z(view0, math.radians(float(sh["angle"])))
+        return elevate(v, float(sh["height"]) * 25.0 + extra_elev[0])
+
+    def build() -> Program:
+        """Each shot's move built with its own settings, laid end to end with cuts between them."""
+        segs, occluders, zoomable = [], [], False
+        for i, sh in enumerate(shots):
+            f_i = float(sh["focal_mm"])
+            D_i = framing_distance(anchors.card_height, float(sh["fill"]), f_i, sensor_h_eff)
+            a_i = Anchors(**{**anchors.__dict__, "view_dir": shot_base(sh)})
+            if sh["move"] == "macro_drift":
+                sub = Program([Segment(0.0, 1.0, macro_move(a_i, D_i))])
+            else:
+                sub = build_program(sh["move"], a_i, D_i, float(sh["move_amount"]), f_i, sensor_h_eff,
+                                    float(sh["fill"]), {**cam_spec, **sh})
+            k = f_i / focal_base           # a different focal length is a zoom on the one lens
+            zoomable = zoomable or sub.zoomable or abs(k - 1.0) > 1e-3
+            t0, t1 = float(sh["t0"]), float(sh["t1"])
+            for sg in sub.segments:
+                fn = sg.fn if abs(k - 1.0) < 1e-6 else (
+                    lambda u, fn=sg.fn, k=k: (lambda p: Pose(p.eye, p.target, p.focus_point, p.roll, p.zoom * k))(fn(u)))
+                segs.append(Segment(t0 + sg.t0 * (t1 - t0), t0 + sg.t1 * (t1 - t0), fn,
+                                    cut_in=sg.cut_in or (i > 0 and sg.t0 == 0.0)))
+            occluders += sub.occluders
+        prog_ = Program(segs, zoomable=zoomable, occluders=occluders)
         if cam_spec.get("cut_in_motion", True):
             roll_into_cuts(prog_)
         return prog_
+
+    def shot_at(t: float) -> dict:
+        for sh in shots:
+            if t <= sh["t1"] + 1e-9:
+                return sh
+        return shots[-1]
 
     # make sure nothing solid sits between the lens and the photo anywhere along the move;
     # if something does, raise the camera a little at a time (like an operator would)
@@ -441,22 +472,26 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         if prog is not None:
             for o in prog.occluders:
                 bpy.data.objects.remove(o, do_unlink=True)
-        prog = build(base)
+        prog = build()
         bpy.context.view_layer.update()
         if all(_clear_view(prog(t), anchors) for t in (0.0, 0.12, 0.25, 0.5, 0.75, 0.9, 1.0)
                if not prog.occluders):
             break
-        base = elevate(base, 3.0)
+        extra_elev[0] += 3.0
 
-    handheld = float(cam_spec.get("handheld", 0.0)) + (1.0 if move == "handheld" or (move == "macro_cut" and cut_to == "handheld") else 0.0)
-    wobble = 0.0 if move in ("locked_off", "crash_zoom") else float(cam_spec.get("rig_wobble", 0.0))
-    if move == "locked_off":
-        handheld = 0.0
+    def shake_amounts(sh) -> tuple[float, float]:
+        hh = float(cam_spec.get("handheld", 0.0)) + (1.0 if sh["move"] == "handheld" else 0.0)
+        wb = float(cam_spec.get("rig_wobble", 0.0))
+        if sh["move"] == "locked_off":
+            hh, wb = 0.0, 0.0
+        if sh["move"] == "crash_zoom":
+            wb = 0.0
+        return hh, wb
     shake = Shake(seed)
     puller = FocusPuller(seed, float(cam_spec.get("focus_drift", 0.0)))
     cam = cam_obj.data
     cam.dof.use_dof = True
-    cam.dof.aperture_fstop = float(cam_spec["fstop"])
+    cam.dof.aperture_fstop = float(shots[0]["fstop"])
     cam.dof.aperture_blades = 0  # the lens shader draws the aperture
     cam_obj.rotation_mode = "QUATERNION"
 
@@ -468,10 +503,13 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         if frame_start < f <= frame_end:
             cut_frames[f] = seg
 
-    def solve(p: Pose, time_s: float, prev_q):
+    fstops = {float(sh["fstop"]) for sh in shots}
+
+    def solve(p: Pose, time_s: float, prev_q, sh=None):
         eye = _inside_room(p.eye.copy(), p.target, anchors)
         if anchors.min_height is not None and eye.z < anchors.min_height:
             eye.z = anchors.min_height
+        handheld, wobble = shake_amounts(sh or shots[0])
         off, (pitch, yaw, roll) = shake.sample(time_s, handheld, wobble)
         m = look_at_matrix(eye, p.target)
         rot = m.to_3x3() @ Matrix.Rotation(p.roll + roll, 3, "Z") @ Matrix.Rotation(pitch, 3, "X") \
@@ -484,7 +522,10 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
         dist = max(0.02, (p.focus_point - loc).dot(fwd))
         return loc, q, dist
 
-    def key(frame, loc, q, dist, zoom):
+    def key(frame, loc, q, dist, zoom, sh=None):
+        if len(fstops) > 1:
+            cam.dof.aperture_fstop = float((sh or shots[0])["fstop"])
+            cam.dof.keyframe_insert("aperture_fstop", frame=frame)
         cam_obj.location = loc
         cam_obj.rotation_quaternion = q
         cam_obj.keyframe_insert("location", frame=frame)
@@ -505,17 +546,19 @@ def animate_camera(cam_obj, cam_spec: dict, anchors: Anchors, fps: float, frame_
             puller.vel = 0.0
             puller.prev_target = None
         p = prog(t)
-        loc, q, target_dist = solve(p, time_s, prev_q)
+        sh = shot_at(t)
+        loc, q, target_dist = solve(p, time_s, prev_q, sh)
         prev_q = q
-        key(frame, loc, q, puller.step(target_dist, dt, time_s), p.zoom)
+        key(frame, loc, q, puller.step(target_dist, dt, time_s), p.zoom, sh)
 
     # clean cuts: hold each outgoing shot until half a frame before the cut, then jump. The motion blur of
     # a frame only ever sees its own shot -- which is exactly what lets a whip pan hide the cut.
     for f, seg in cut_frames.items():
         half = f - 0.5
         p = seg.fn(0.0)
-        loc, q, dist = solve(p, (half - frame_start) * dt, prev_q=None)
-        key(half, loc, q, dist, p.zoom)
+        sh = shot_at(seg.t0 + 1e-6)
+        loc, q, dist = solve(p, (half - frame_start) * dt, prev_q=None, sh=sh)
+        key(half, loc, q, dist, p.zoom, sh)
         for owner in (cam_obj, cam):
             ad = owner.animation_data
             if not ad or not ad.action:

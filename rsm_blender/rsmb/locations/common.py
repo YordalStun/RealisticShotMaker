@@ -27,6 +27,12 @@ class Ctx:
     sun_window: dict | None = None  # filled by a location: dict(centre, normal, bottom, top) for aiming the sun
 
     @property
+    def top_down(self) -> bool:
+        """Any shot looks straight down (leaning prints would be seen edge-on, so they lie flat instead)."""
+        shots = self.job.get("shots") or [{"move": self.spec["camera"]["move"]}]
+        return any(s["move"] == "top_down" for s in shots)
+
+    @property
     def scene_spec(self):
         return self.spec["scene"]
 

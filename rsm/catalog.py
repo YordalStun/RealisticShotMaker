@@ -319,6 +319,8 @@ MOVES: dict[str, Move] = {m.id: m for m in [
     Move("push_in", "Slow push-in", "The camera creeps toward the photo. Says: this matters."),
     Move("macro_cut", "Extreme close-up, then cut wider", "Opens deep inside the picture (faces, grain, "
          "scratches), then hard-cuts to a normal shot of the photo in its setting.", 9.0),
+    Move("macro_drift", "Extreme close-up drift", "Deep inside the picture (faces, grain, scratches), drifting "
+         "slowly across its surface. Use it as one shot in a shot list; 'Close-up magnification' sets how close."),
     Move("pull_out", "Slow pull-out", "Starts tight on the photo and drifts back to reveal the room.", 9.0),
     Move("slide_right", "Slide right", "Glides sideways to the right. Foreground and background move at "
          "different speeds (parallax)."),

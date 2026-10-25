@@ -120,7 +120,12 @@ def build_scene(job: dict):
     character = float(spec["look"].get("lens_character", 1.0))
     ca_scale = float(spec["look"].get("chromatic_aberration", 1.0))
     from rsmb.shots import ZOOM_MOVES
-    zoomable = cam_spec["move"] in ZOOM_MOVES or (cam_spec["move"] == "macro_cut" and cam_spec.get("cut_to") in ZOOM_MOVES)
+    shots = job.get("shots") or []
+    if shots:
+        cam_spec = dict(cam_spec, _shots=shots)
+    zoomable = (cam_spec["move"] in ZOOM_MOVES or (cam_spec["move"] == "macro_cut" and cam_spec.get("cut_to") in ZOOM_MOVES)
+                or any(s["move"] in ZOOM_MOVES or abs(float(s["focal_mm"]) - float(cam_spec["focal_mm"])) > 1e-3
+                       for s in shots))
     src = lens.build_osl(lens_def, float(cam_spec["focal_mm"]), character, ca_scale, zoomable=zoomable)
     lens.apply_lens(cam_data, src, job["paths"]["work"])
     aspect = res["width"] / res["height"]

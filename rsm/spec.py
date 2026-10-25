@@ -90,6 +90,9 @@ class CameraSpec:
     cut_to: str = "push_in"           # the move used after the cut
     macro_fill: float = 4.0           # how much bigger than the frame the print is in the close-up
     cut_in_motion: bool = True        # after a cut the camera is already moving (no ramp up from standstill)
+    # shot list: with cuts, each shot overrides move/framing/focal_mm/fstop/angle/height/move_amount/macro_fill
+    # and has a length in seconds (see rsm/shotlist.py). Empty = one shot made of the settings above.
+    shots: list = field(default_factory=list)
 
 
 @dataclass

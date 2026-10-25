@@ -75,7 +75,7 @@ def build(ctx: Ctx):
 
     # ------------------------------------------------------------------ the hero print
     placement = s.get("placement", "leaning")
-    if ctx.spec["camera"]["move"] == "top_down" and placement == "leaning":
+    if ctx.top_down and placement == "leaning":
         placement = "flat"
     hero_meta = ctx.job["polaroid"]
     extras = ctx.job.get("extra_prints", [])

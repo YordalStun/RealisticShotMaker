@@ -226,7 +226,7 @@ def build(ctx: Ctx):
     extras = list(ctx.job.get("extra_prints", []))
     card_h = meta["card_mm"][1] / 1000.0
     placement = s.get("placement", "flat")
-    if ctx.spec["camera"]["move"] == "top_down" and placement == "leaning":
+    if ctx.top_down and placement == "leaning":
         placement = "flat"
     box_at = Vector((0.24, 0.36, surf))
     box_rot = math.radians(-8)
