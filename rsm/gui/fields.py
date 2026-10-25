@@ -55,6 +55,17 @@ SECTIONS: dict[str, list[Field]] = {
         Field("polaroid.photo_zoom", "Zoom into picture", "slider", minimum=1.0, maximum=3.0, group="Picture"),
         Field("polaroid.photo_offset_x", "Pan left/right", "slider", minimum=-1.0, maximum=1.0, group="Picture"),
         Field("polaroid.photo_offset_y", "Pan up/down", "slider", minimum=-1.0, maximum=1.0, group="Picture"),
+        Field("polaroid.print_type", "Photo is", "combo", list(catalog.PRINT_TYPES.items()), group="Print",
+              tip="An instant print, or a photographic print behind glass in a picture frame. On the "
+                  "investigation board, the washing line and in the album it's always a print."),
+        Field("polaroid.frame_style", "Picture frame", "combo", _opts(catalog.FRAME_STYLES), group="Print"),
+        Field("polaroid.frame_size", "Print size", "combo", [(k, v[0]) for k, v in catalog.FRAME_SIZES.items()],
+              group="Print"),
+        Field("polaroid.frame_mat", "Card mount around the photo", "check", group="Print",
+              tip="A cream mount board with a bevelled window between the frame and the photo."),
+        Field("polaroid.fit_photo_aspect", "Fit to the picture's shape", "check", group="Print",
+              tip="Stretch the instant print's window or the frame to the shape of your picture instead of "
+                  "cropping the picture to the standard size. The size stays about the same."),
         Field("polaroid.film", "Film type", "combo", _opts(catalog.FILM_TYPES), group="Print"),
         Field("polaroid.frame_color", "Frame colour", "combo", [(k, v[0]) for k, v in catalog.FRAME_COLORS.items()],
               group="Print"),

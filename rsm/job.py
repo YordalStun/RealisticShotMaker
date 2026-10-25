@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import random
 import time
 from pathlib import Path
@@ -15,7 +16,10 @@ from .polaroid import generate, px_per_mm_for
 from .polaroid.film import develop
 from .polaroid.imaging import rng as np_rng, save_rgb
 from .polaroid.photos import BUILTIN, get_photo
+from .polaroid.card import layout_for
 from .spec import PolaroidSpec, ShotSpec
+
+NO_FRAMES = ("investigation_board", "photo_line", "photo_album")
 
 BLENDER_DIR = Path(__file__).resolve().parent.parent / "rsm_blender"
 
@@ -88,6 +92,8 @@ def _variant(base: PolaroidSpec, r: random.Random, photo: str | None = None) -> 
     p.dog_ear = 0.0 if r.random() < 0.7 else r.uniform(0.2, 0.6)
     p.creases = 0.0 if r.random() < 0.7 else r.uniform(0.1, 0.5)
     p.tape = False
+    p.print_type = "instant"     # the other photos lying about are prints, whatever the hero is in
+    p.fit_photo_aspect = False
     p.pin_hole = r.random() < 0.08
     p.film = base.film if r.random() < 0.7 else r.choice(["600", "sx70", "instax_mini", "spectra"])
     return p
@@ -128,7 +134,14 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     if tex_fill > 1.0:
         # a close-up fills the screen with a small part of the print: it needs a lot more texture detail
         cap = 56.0
-    ppm = px_per_mm_for(resolved["height"], tex_fill, film.card_mm[1], cap=24.0 if preview else cap)
+    if spec.scene.location in NO_FRAMES and spec.polaroid.print_type == "framed":
+        # pegged on a line, stuck on the board, slipped into an album: those are prints, not framed photos
+        spec = dataclasses.replace(spec, polaroid=dataclasses.replace(spec.polaroid, print_type="instant"))
+    lay = layout_for(spec.polaroid)
+    card_h = lay.frame["outer_mm"][1] if lay.frame else lay.card_mm[1]
+    ppm = px_per_mm_for(resolved["height"], tex_fill, card_h, cap=24.0 if preview else cap)
+    # keep a big framed print's texture to a sensible size (about 40 megapixels)
+    ppm = min(ppm, math.sqrt(40e6 / (lay.card_mm[0] * lay.card_mm[1])))
 
     progress("Developing the instant print…")
     hero = generate(spec.polaroid, ppm).save(work, "hero")

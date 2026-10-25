@@ -522,7 +522,18 @@ class MainWindow(QMainWindow):
             self.shot_editor.set_shots(shots, self.sel_shot)
         self._loading = False
         self._rebuild_location_options()
+        self._print_type_fields()
         self._update_estimate()
+
+    def _print_type_fields(self):
+        """Frame settings only matter for a framed photo; film and border colour only for an instant print."""
+        framed = self.spec.polaroid.print_type == "framed"
+        for path, on in (("polaroid.frame_style", framed), ("polaroid.frame_size", framed),
+                         ("polaroid.frame_mat", framed), ("polaroid.film", not framed),
+                         ("polaroid.frame_color", not framed)):
+            w = self.widgets.get(path)
+            if w is not None:
+                w.setEnabled(on)
 
     def _limit_placements(self):
         """Only offer the placements the chosen set can do (no 'pinned' on the kitchen table)."""
@@ -632,6 +643,8 @@ class MainWindow(QMainWindow):
                 self._load_into_widgets()
         if f.path == "output.output_dir":
             self.settings.setValue("output_dir", value)
+        if f.path == "polaroid.print_type":
+            self._print_type_fields()
         if f.path.startswith("polaroid."):
             self._schedule_polaroid_preview()
         if not f.path.startswith("output."):

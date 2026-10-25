@@ -327,7 +327,10 @@ def place_card(meta, name, col, where: Vector, yaw: float, mode: str, lean_deg: 
         zs = footprint_heights(meta, where, yaw)
         support = _support_plane(pts, zs)
         where.z = max(zs)
-    obj = build_card(meta, name, col)
+    obj = build_card(meta, name, col, stand_deg=lean_deg if mode == "leaning" else None)
+    if mode == "leaning" and meta.get("frame"):
+        # a frame stands on the back edge of its moulding (and its strut): the front edge is in the air
+        lift += float(meta["thickness_mm"]) / 1000.0 * math.sin(math.radians(lean_deg))
     if mode == "flat" and support is not None and support[1].z < 0.9999:
         # rest on the highest points underneath, tipping like a real print would
         (cx, cy, cz), n = support
