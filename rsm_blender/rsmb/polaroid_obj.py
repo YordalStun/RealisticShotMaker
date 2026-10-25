@@ -275,7 +275,7 @@ def _frame_materials(finish: str, name: str):
 
 
 def _frame_glass(name: str):
-    """Picture glass: reflections and the odd smudge, but light goes straight through (no refraction, no
+    """Picture glass: a soft reflection and the odd smudge, but light goes straight through (no refraction, no
     shadow), the way a 2 mm pane looks."""
     from .util import srgb
     mat = new_material(name)
@@ -290,11 +290,15 @@ def _frame_glass(name: str):
     gloss = n.new("ShaderNodeBsdfGlossy")
     gloss.inputs["Color"].default_value = (1, 1, 1, 1)
     n.link(n.math("ADD", 0.01, n.math("MULTIPLY", (smr, "Color"), 0.08)), None, gloss, "Roughness")
-    fres = n.new("ShaderNodeFresnel", IOR=1.52)
+    # low-reflection picture glass, and only its front face reflects: a frame on a table under a bright window
+    # would otherwise show the window instead of the photo
+    fres = n.new("ShaderNodeFresnel", IOR=1.3)
+    geo = n.new("ShaderNodeNewGeometry")
+    fres_front = n.math("MULTIPLY", (fres, "Fac"), n.math("SUBTRACT", 1.0, (geo, "Backfacing")))
     clear = n.new("ShaderNodeBsdfTransparent")
     clear.inputs["Color"].default_value = srgb("#fcfefc")
     mix = n.new("ShaderNodeMixShader")
-    n.link(fres, "Fac", mix, "Fac")
+    n.link(fres_front, None, mix, "Fac")
     n.link(clear, None, mix, 1)
     n.link(gloss, None, mix, 2)
     speck = n.new("ShaderNodeBsdfDiffuse")
