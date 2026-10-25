@@ -20,6 +20,8 @@ from ..estimate import estimate
 from ..spec import ShotSpec
 from .draft_player import DraftPlayer
 from .output_viewer import OutputViewer
+from .shot_timeline import ShotListEditor
+from .. import shotlist
 from .fields import SECTIONS, Field, get_attr, set_attr
 from .preview_popup import MoveHoverWatcher, PreviewPopup
 from .render_queue import QueuePanel, RenderQueue, power_action
@@ -116,7 +118,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.preview_popup = PreviewPopup()
-        for key in ("camera.move", "camera.cut_to"):
+        for key in ("camera.move",):
             MoveHoverWatcher(self.widgets[key], self.preview_popup)
         self.bridge.preview_progress.connect(lambda m: self.blender_label.setText(m))
         self.bridge.previews_done.connect(self._previews_done)
@@ -276,6 +278,16 @@ class MainWindow(QMainWindow):
                 w.setToolTip(f.tip)
             groups[g].addRow(f.label, w)
             self.widgets[f.path] = w
+        if section == "Camera":
+            box = QGroupBox("Shots")
+            bl = QVBoxLayout(box)
+            self.shot_editor = ShotListEditor()
+            bl.addWidget(self.shot_editor)
+            self.shot_editor.strip.selected.connect(self._shot_selected)
+            self.shot_editor.strip.lengths_changed.connect(self._shot_lengths)
+            self.shot_editor.cut_requested.connect(self._shot_cut)
+            self.shot_editor.remove_requested.connect(self._shot_remove)
+            lay.insertWidget(0, box)
         if section == "Scene":
             box = QGroupBox("Location options")
             self.locopt_form = QFormLayout(box)
@@ -324,8 +336,53 @@ class MainWindow(QMainWindow):
             self.preview_popup.hide_preview()
         return super().eventFilter(obj, ev)
 
+    # ------------------------------------------------------------------ shot list
+    def _is_list(self) -> bool:
+        return len(self.spec.camera.shots) >= 2
+
+    def _set_shot_value(self, key: str, value):
+        if self._is_list():
+            shots = shotlist.shots_of(self.spec)
+            self.sel_shot = min(getattr(self, "sel_shot", 0), len(shots) - 1)
+            shots[self.sel_shot][key] = value
+            shotlist.set_shots(self.spec, shots)
+        else:
+            setattr(self.spec.camera, key, value)
+
+    def _shots_changed(self):
+        self._load_into_widgets()
+        self._schedule_draft()
+        self._update_estimate()
+
+    def _shot_selected(self, i: int):
+        self.sel_shot = i
+        self._load_into_widgets()
+
+    def _shot_lengths(self, lengths: list):
+        shots = shotlist.shots_of(self.spec)
+        for s, ln in zip(shots, lengths):
+            s["length"] = ln
+        shotlist.set_shots(self.spec, shots)
+        self._shots_changed()
+
+    def _shot_cut(self):
+        sel = getattr(self, "sel_shot", 0)
+        shotlist.set_shots(self.spec, shotlist.split(shotlist.shots_of(self.spec), sel))
+        self.sel_shot = sel + 1
+        self._shots_changed()
+
+    def _shot_remove(self):
+        sel = getattr(self, "sel_shot", 0)
+        shotlist.set_shots(self.spec, shotlist.remove(shotlist.shots_of(self.spec), sel))
+        self.sel_shot = max(0, sel - 1)
+        self._shots_changed()
+
     def _fun_chosen(self, item):
         move = item.data(Qt.UserRole)
+        if self._is_list():
+            self._set_shot_value("move", move)
+            self._shots_changed()
+            return
         self.spec.camera.move = move
         mv = catalog.MOVES[move]
         self.spec.camera.duration = mv.default_duration
@@ -389,6 +446,10 @@ class MainWindow(QMainWindow):
             for f in fields:
                 w = self.widgets[f.path]
                 v = get_attr(self.spec, f.path)
+                key = f.path[7:] if f.path.startswith("camera.") else ""
+                if key in shotlist.PER_SHOT and self._is_list():
+                    shots = shotlist.shots_of(self.spec)
+                    v = shots[min(getattr(self, "sel_shot", 0), len(shots) - 1)][key]
                 if f.path == "camera.move":
                     fun = catalog.MOVES.get(v) is not None and catalog.MOVES[v].group == "fun"
                     ph = w.findData("__fun__")
@@ -443,6 +504,10 @@ class MainWindow(QMainWindow):
                 elif f.kind == "folder":
                     w.set_value(str(v))
         self._limit_placements()
+        if hasattr(self, "shot_editor"):
+            shots = shotlist.shots_of(self.spec)
+            self.sel_shot = min(getattr(self, "sel_shot", 0), len(shots) - 1)
+            self.shot_editor.set_shots(shots, self.sel_shot)
         self._loading = False
         self._rebuild_location_options()
         self._update_estimate()
@@ -498,6 +563,30 @@ class MainWindow(QMainWindow):
 
     def _changed(self, f: Field, value):
         if getattr(self, "_loading", False) or value == "__fun__":
+            return
+        key = f.path[7:] if f.path.startswith("camera.") else ""
+        if key == "move" and value == "macro_cut":
+            # the classic close-up cut is a two-shot list: start one and let the user edit each side
+            self.spec.camera.move = "macro_cut"
+            self.spec.camera.duration = catalog.MOVES["macro_cut"].default_duration
+            shotlist.set_shots(self.spec, shotlist.shots_of(self.spec))
+            self.sel_shot = 0
+            self._shots_changed()
+            return
+        if key in shotlist.PER_SHOT and self._is_list():
+            self._set_shot_value(key, value)
+            if key == "framing":
+                self._set_shot_value("focal_mm", {"extreme_close": 100.0, "close": 85.0, "medium": 50.0,
+                                                  "wide": 35.0}.get(value, self.spec.camera.focal_mm))
+            self._shots_changed()
+            return
+        if key == "duration" and self._is_list():
+            shots = shotlist.shots_of(self.spec)
+            k = float(value) / max(0.01, sum(s["length"] for s in shots))
+            for s in shots:
+                s["length"] *= k
+            shotlist.set_shots(self.spec, shots)
+            self._shots_changed()
             return
         set_attr(self.spec, f.path, value)
         if f.path == "polaroid.condition":
@@ -574,9 +663,7 @@ class MainWindow(QMainWindow):
         except Exception:
             return ""
         film = catalog.FILM_TYPES.get(self.spec.polaroid.film, catalog.FILM_TYPES["600"])
-        fill = catalog.FRAMINGS.get(self.spec.camera.framing, ("", 0.62))[1]
-        if self.spec.camera.move == "macro_cut":
-            fill = max(fill, self.spec.camera.macro_fill)
+        fill = shotlist.max_fill(self.spec)
         need = int(out_h * fill * film.image_mm[1] / film.card_mm[1] * self.spec.polaroid.photo_zoom)
         if ph < need * 0.5:
             return (f"Your photo is {ph} px on its short side; this framing at this resolution needs about "
@@ -922,10 +1009,14 @@ class MainWindow(QMainWindow):
         if not p:
             return
         self.spec.scene.mood = "natural"   # a look without a mood goes back to daylight
+        self.spec.camera.shots = []
         for section, values in p.items():
             obj = getattr(self.spec, section)
             for k, v in values.items():
                 setattr(obj, k, v)
+        if self.spec.camera.move == "macro_cut":
+            shotlist.set_shots(self.spec, shotlist.shots_of(self.spec))
+        self.sel_shot = 0
         self._load_into_widgets()
         self._schedule_draft()
         self.preset_combo.blockSignals(True)

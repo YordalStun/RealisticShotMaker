@@ -36,3 +36,30 @@ def test_shot_list_survives_save_and_load(tmp_path):
     s.save(tmp_path / "a.rsm.json")
     t = ShotSpec.load(tmp_path / "a.rsm.json")
     assert [x["move"] for x in shotlist.resolve(t)] == ["macro_drift", s.camera.shots[1]["move"]]
+
+
+def test_gui_edits_each_shot_separately():
+    from PySide6.QtWidgets import QApplication
+    import shiboken6
+    from rsm.gui.fields import SECTIONS
+    from rsm.gui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    w = MainWindow()
+    w.apply_preset("Memory close-up cut")
+    shots = shotlist.shots_of(w.spec)
+    assert [s["move"] for s in shots] == ["macro_drift", "push_in"]
+    field = {f.path: f for fs in SECTIONS.values() for f in fs}
+    w._shot_selected(1)
+    w._changed(field["camera.focal_mm"], 35.0)
+    w._changed(field["camera.move"], "slide_right")
+    shots = shotlist.shots_of(w.spec)
+    assert shots[1]["focal_mm"] == 35.0 and shots[1]["move"] == "slide_right"
+    assert shots[0]["focal_mm"] != 35.0 and shots[0]["move"] == "macro_drift"   # the other side untouched
+    w._shot_cut()                                                              # a third shot
+    assert len(shotlist.shots_of(w.spec)) == 3 and w.sel_shot == 2
+    w._shot_remove()
+    assert len(shotlist.shots_of(w.spec)) == 2
+    w.close()
+    shiboken6.delete(w.preview_popup)
+    shiboken6.delete(w)
+    app.processEvents()

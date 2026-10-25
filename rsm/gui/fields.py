@@ -89,15 +89,9 @@ SECTIONS: dict[str, list[Field]] = {
               [(k, v.name + (" (several photos)" if v.group == "multi" else ""))
                for k, v in catalog.MOVES.items() if v.group != "fun"], group="Move",
               tip="Hover over a move to see a preview. More playful moves are in the Fun moves tab."),
-        Field("camera.duration", "Length", "dspin", minimum=2, maximum=60, step=0.5, suffix=" s", group="Move"),
-        Field("camera.cut_at", "Cut happens at", "slider", minimum=0.1, maximum=0.9, group="Close-up cut",
-              tip="Only for “Extreme close-up, then cut wider”: how far into the shot the cut comes."),
-        Field("camera.cut_to", "After the cut", "combo",
-              [(k, v.name) for k, v in catalog.MOVES.items() if k != "macro_cut" and v.group != "multi"],
-              group="Close-up cut",
-              tip="The camera move used for the wider part after the cut."),
+        Field("camera.duration", "Total length", "dspin", minimum=2, maximum=60, step=0.5, suffix=" s", group="Move"),
         Field("camera.macro_fill", "Close-up magnification", "slider", minimum=2.0, maximum=8.0, step=0.1,
-              suffix="×", group="Close-up cut", tip="How far into the picture the opening close-up goes."),
+              suffix="×", group="Move", tip="For the 'Extreme close-up drift' move: how far into the picture it goes."),
         Field("camera.cut_in_motion", "Already moving after a cut", "check", group="Move",
               tip="Any shot with a cut: the part after the cut starts mid-move, as if the camera had been rolling "
                   "before it, instead of starting still and easing in. Off = it eases in from a standstill."),
