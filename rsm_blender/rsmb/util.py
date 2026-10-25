@@ -118,6 +118,9 @@ def lathe(name, profile, segments=64, mat=None, col=None, loc=(0, 0, 0), smooth=
     obj.location = loc
     if smooth:
         set_smooth(obj)
+        # keep real corners (a rim, a base edge) crisp instead of smearing the shading across them
+        if hasattr(obj.data, "set_sharp_from_angle"):
+            obj.data.set_sharp_from_angle(angle=math.radians(40))
     return obj
 
 

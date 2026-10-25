@@ -162,20 +162,89 @@ def mug(name, col, loc, rot_z=0.0, color="#6c8a7e", coffee=0.75, stain=True):
     return root
 
 
+def _dielectric(name, ior, tint, absorb, density, rough=0.0, smudge=0.0):
+    """Clear glass or water: refraction, a whisper of surface grime and a coloured body (the green of
+    soda-lime glass, the blue of a deep glass of water) that only shows where the light goes through a lot of it."""
+    from .util import Nodes, new_material, srgb
+    mat = bpy.data.materials.get(name)
+    if mat is not None:
+        return mat
+    mat = new_material(name)
+    n = Nodes(mat.node_tree)
+    b = n.new("ShaderNodeBsdfPrincipled", IOR=ior, Roughness=rough)
+    b.inputs["Transmission Weight"].default_value = 1.0
+    b.inputs["Base Color"].default_value = srgb(tint)
+    if smudge > 0:
+        tc = n.new("ShaderNodeTexCoord")
+        sm = n.new("ShaderNodeTexNoise", Scale=180.0, Detail=6.0, Roughness=0.6)
+        n.link(tc, "Object", sm, "Vector")
+        smr = n.ramp((sm, "Fac"), [(0.58, (0, 0, 0)), (0.78, (1, 1, 1))])
+        n.link(n.math("ADD", rough, n.math("MULTIPLY", (smr, "Color"), smudge * 0.12)), None, b, "Roughness")
+    vol = n.new("ShaderNodeVolumeAbsorption", Density=density)
+    vol.inputs["Color"].default_value = srgb(absorb)
+    out = n.new("ShaderNodeOutputMaterial")
+    n.link(b, None, out, "Surface")
+    n.link(vol, None, out, "Volume")
+    return mat
+
+
+def _outward(obj):
+    """Point every face outward. Refractive solids must: with flipped normals Cycles swaps inside and
+    outside, and the glass turns into a chrome mirror of total internal reflection."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return obj
+
+
 def drinking_glass(name, col, loc, water=0.6):
+    """A plain tumbler: tapered, a thick base, a rounded rim, and water that meets the glass (a thin air gap
+    between them reads as a silvery skin, so the water slightly overlaps the wall) with a meniscus at the edge."""
     root = _group(name, col, loc)
-    g = M.glass(f"{name}_glass", "#f2f6f4", 0.0, 1.5, smudge=0.3)
-    r, h, t = 0.033, 0.11, 0.0022
-    prof = [(0.0, 0.0), (r - 0.002, 0.0), (r, 0.004), (r + 0.004, h), (r + 0.004 - t, h), (r - t, 0.008),
-            (0.0, 0.007)]
-    body = lathe(f"{name}_body", prof, 72, g, col)
+    g = _dielectric(f"{name}_glassmat", 1.52, "#fbfdfc", "#b9dcc8", 2.5, smudge=0.35)
+    rb, rt, h, t, base = 0.0305, 0.0355, 0.108, 0.0021, 0.0065
+
+    def outer(z):
+        return rb + (rt - rb) * z / h
+
+    prof = [(0.0, 0.0011), (rb - 0.006, 0.0)]
+    for k in range(5):                                  # rounded outer foot
+        a = math.radians(-90 + 90 * k / 4)
+        prof.append((rb - 0.0025 + 0.0025 * math.cos(a), 0.0025 + 0.0025 * math.sin(a)))
+    prof.append((outer(h - t / 2), h - t / 2))
+    for k in range(1, 8):                               # rounded rim
+        a = math.radians(180 * k / 7)
+        cx = outer(h - t / 2) - t / 2
+        prof.append((cx + (t / 2) * math.cos(a), h - t / 2 + (t / 2) * math.sin(a)))
+    prof.append((outer(base + 0.003) - t, base + 0.003))
+    for k in range(1, 5):                               # soft inside corner
+        a = math.radians(-90 * k / 4)
+        prof.append((outer(base) - t - 0.003 + 0.003 * math.cos(a), base + 0.003 + 0.003 * math.sin(a)))
+    prof.append((0.0, base + 0.0008))                    # slightly domed floor
+    body = _outward(lathe(f"{name}_body", prof, 96, g, col))
     _parent(body, root)
     if water > 0:
-        wm = M.glass(f"{name}_water", "#f4fbff", 0.0, 1.333, smudge=0.0)
-        wz = 0.007 + (h - 0.012) * water
-        rw = r - t + 0.004 * (wz / h)
-        wprof = [(0.0, 0.0075), (r - t - 0.0002, 0.0085), (rw - 0.0002, wz), (0.0, wz)]
-        w = lathe(f"{name}_water", wprof, 64, wm, col)
+        wm = _dielectric(f"{name}_watermat", 1.333, "#ffffff", "#9fd2e6", 1.2)
+        wz = base + (h - base - 0.012) * water
+        ov = 0.00012                                    # into the glass wall: no air gap
+
+        def inner(z):
+            return outer(z) - t + ov
+        wprof = [(0.0, base + 0.0008 - ov)]
+        for k in range(1, 5):
+            a = math.radians(-90 + 90 * k / 4)
+            wprof.append((outer(base) - t - 0.003 + (0.003 + ov) * math.cos(a), base + 0.003 + (0.003 + ov) * math.sin(a)))
+        # meniscus: the water climbs the glass by about a millimetre
+        wprof.append((inner(wz + 0.0011), wz + 0.0011))
+        for k in range(1, 6):
+            u = k / 5
+            rr = inner(wz) - 0.0025 * u
+            wprof.append((rr, wz + 0.0011 * (1 - u) ** 2))
+        wprof.append((0.0, wz))
+        w = _outward(lathe(f"{name}_water", wprof, 96, wm, col))
         _parent(w, root)
     return root
 
@@ -595,11 +664,14 @@ def fruit_bowl(name, col, loc, rng=None, color="#3f5d6b"):
 def jar(name, col, loc, fill_color="#7a1c2a", label=True):
     root = _group(name, col, loc)
     g = M.glass(f"{name}_glass", "#f4f8f6", 0.0, 1.5, smudge=0.3)
-    body = lathe(f"{name}_glass", [(0.0, 0.0), (0.03, 0.0), (0.034, 0.006), (0.034, 0.08), (0.028, 0.09),
-                                   (0.028, 0.1), (0.0, 0.1)], 64, g, col)
+    # a jar is a shell of glass (a solid lump of glass refracts like a paperweight)
+    body = _outward(lathe(f"{name}_glass", [(0.0, 0.0), (0.03, 0.0), (0.034, 0.006), (0.034, 0.08), (0.028, 0.09),
+                                            (0.028, 0.1), (0.0255, 0.1), (0.0255, 0.091), (0.0315, 0.0805),
+                                            (0.0315, 0.0075), (0.028, 0.004), (0.0, 0.004)], 64, g, col))
     _parent(body, root)
     jam = M.ceramic(f"{name}_jam", fill_color, rough=0.15, speckle=0.0)
-    fill = lathe(f"{name}_fill", [(0.0, 0.002), (0.0315, 0.004), (0.0315, 0.06), (0.0, 0.062)], 48, jam, col)
+    fill = lathe(f"{name}_fill", [(0.0, 0.0039), (0.0281, 0.0039), (0.0316, 0.0074), (0.0316, 0.06), (0.0, 0.062)],
+                 64, jam, col)
     _parent(fill, root)
     lid = cylinder(f"{name}_lid", 0.031, 0.014, (0, 0, 0.1), M.fabric(f"{name}_gingham", "#f2efe6", 1600, 0.85, 0.3,
                                                                       pattern="gingham", pattern_color="#b8463c",
@@ -1269,12 +1341,12 @@ def ink_bottle(name, col, loc, rot_z=0.0, ink="#14183a"):
     """A squat glass ink bottle, ink line on the inside, a black screw cap."""
     root = _group(name, col, loc, rot_z)
     glass = M.glass(f"{name}_glass", "#eef3ee", 0.02, 1.5, 0.4)
-    btl = lathe(f"{name}_bottle", [(0.0, 0.0), (0.03, 0.0), (0.032, 0.004), (0.032, 0.036), (0.026, 0.044),
+    btl = _outward(lathe(f"{name}_bottle", [(0.0, 0.0), (0.03, 0.0), (0.032, 0.004), (0.032, 0.036), (0.026, 0.044),
                                    (0.013, 0.048), (0.013, 0.056), (0.0115, 0.056), (0.0115, 0.049), (0.024, 0.043),
-                                   (0.029, 0.036), (0.029, 0.006), (0.0, 0.006)], 64, glass, col)
+                                   (0.029, 0.036), (0.029, 0.006), (0.0, 0.006)], 64, glass, col))
     _parent(btl, root)
-    fill = lathe(f"{name}_ink", [(0.0, 0.006), (0.0288, 0.006), (0.0288, 0.022), (0.0, 0.022)], 64,
-                 M.glass(f"{name}_inkliquid", ink, 0.05, 1.34, 0.0), col)
+    fill = _outward(lathe(f"{name}_ink", [(0.0, 0.0059), (0.0291, 0.0059), (0.0291, 0.022), (0.0, 0.022)], 64,
+                          M.glass(f"{name}_inkliquid", ink, 0.05, 1.34, 0.0), col))
     _parent(fill, root)
     cap = cylinder(f"{name}_cap", 0.015, 0.014, (0, 0, 0.05), M.plastic(f"{name}_cap", "#121212", 0.35, 0.2), col, 48,
                    bevel=0.001)
