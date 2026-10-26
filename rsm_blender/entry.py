@@ -72,6 +72,9 @@ def build_scene(job: dict):
         mod = importlib.import_module("rsmb.locations.study_desk")
     from rsmb.locations import common as loc_common
     loc_common.PLACED_PRINTS.clear()
+    moves = {spec["camera"].get("move")} | {s_.get("move") for s_ in job.get("shots") or []}
+    if "frame_reflection" in moves:
+        job["polaroid"]["glass_reflect"] = True     # ordinary glass: the move is about its reflection
     built = mod.build(ctx)
     anchors: camera_rig.Anchors = built["anchors"]
     loc_common.make_room_for_frame(anchors)

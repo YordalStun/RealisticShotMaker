@@ -274,7 +274,7 @@ def _frame_materials(finish: str, name: str):
     return m, m
 
 
-def _frame_glass(name: str):
+def _frame_glass(name: str, reflective: bool = False):
     """Picture glass: a soft reflection and the odd smudge, but light goes straight through (no refraction, no
     shadow), the way a 2 mm pane looks."""
     from .util import srgb
@@ -292,7 +292,7 @@ def _frame_glass(name: str):
     n.link(n.math("ADD", 0.01, n.math("MULTIPLY", (smr, "Color"), 0.08)), None, gloss, "Roughness")
     # low-reflection picture glass, and only its front face reflects: a frame on a table under a bright window
     # would otherwise show the window instead of the photo
-    fres = n.new("ShaderNodeFresnel", IOR=1.3)
+    fres = n.new("ShaderNodeFresnel", IOR=1.52 if reflective else 1.3)
     geo = n.new("ShaderNodeNewGeometry")
     fres_front = n.math("MULTIPLY", (fres, "Fac"), n.math("SUBTRACT", 1.0, (geo, "Backfacing")))
     clear = n.new("ShaderNodeBsdfTransparent")
@@ -350,7 +350,7 @@ def build_framed(meta: dict, name: str = "Polaroid", col=None, stand_deg: float 
     gw, gh = iw + 2 * under, ih + 2 * under
     y = lip
     from .util import box
-    glass = box(f"{name}_Glass", gw / 1000, 0.002, gh / 1000, (0, (y + 1.0) / 1000, H / 2000), _frame_glass(f"{name}_glass"), col)
+    glass = box(f"{name}_Glass", gw / 1000, 0.002, gh / 1000, (0, (y + 1.0) / 1000, H / 2000), _frame_glass(f"{name}_glass", bool(meta.get("glass_reflect"))), col)
     child(glass)
     y += 2.0
     if fr.get("mat"):

@@ -327,7 +327,10 @@ def _inside_room(eye: Vector, target: Vector, anchors: Anchors, margin: float = 
     for i in range(3):
         if abs(d[i]) < 1e-9:
             continue
-        for bound in (lo[i], hi[i]):
+        # only the wall the camera would go through counts (a photo hung on a wall is itself inside the margin)
+        for bound, crossed in ((lo[i], eye[i] < lo[i] <= target[i]), (hi[i], eye[i] > hi[i] >= target[i])):
+            if not crossed:
+                continue
             t = (bound - target[i]) / d[i]
             if 0 < t < t_max:
                 t_max = t

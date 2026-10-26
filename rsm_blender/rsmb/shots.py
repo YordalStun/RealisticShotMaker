@@ -21,6 +21,7 @@ from .camera_rig import (Anchors, Pose, dolly_ease, elevate, framing_distance, l
 FUN_MOVES = ("whip_pan", "whip_cut", "crash_zoom", "dolly_zoom", "wipe_reveal", "speed_ramp", "roll_reveal",
              "orbit")
 MULTI_MOVES = ("photo_tour", "photo_montage")
+FRAME_MOVES = ("frame_track", "frame_rack", "frame_reflection", "frame_tilt")
 ZOOM_MOVES = ("crash_zoom", "dolly_zoom")
 
 
@@ -310,4 +311,107 @@ def build_program(move: str, a: Anchors, D: float, amount: float, focal: float, 
             segs.append(Segment(t0, t1, travel))
         return Program(segs)
 
+    if move in FRAME_MOVES:
+        return _frame_move(move, a, D, amount, base, right)
+
     return Program([Segment(0, 1, make_move(move, a, D, amount))])
+
+
+def _soft_focus(photos: list, look: Vector, fallback: Vector, width: float = 0.09) -> Vector:
+    """Focus on whichever photo the frame is looking at, blending smoothly between neighbours the way a
+    focus puller follows a pan along a wall of pictures."""
+    if not photos:
+        return fallback
+    wsum, acc = 0.0, Vector()
+    for p in photos:
+        c = Vector(p["centre"])
+        w = math.exp(-((c - look).length / width) ** 2) + 1e-9
+        wsum += w
+        acc += c * w
+    near = min(photos, key=lambda p: (Vector(p["centre"]) - look).length)
+    soft = acc / wsum
+    # nothing near the look point: hold focus on the closest photo rather than on empty wall
+    return soft if (Vector(near["centre"]) - look).length < 0.25 else Vector(near["centre"])
+
+
+def _frame_move(move: str, a: Anchors, D: float, amount: float, base: Vector, right: Vector) -> Program:
+    """Moves made for walls and rows of framed photos."""
+    S = a.subject
+    photos = [dict(p, centre=Vector(p["centre"])) for p in (a.extra or {}).get("photos", [])]
+    others = [p for p in photos if not p.get("hero")]
+    eye0 = S + elevate(base, 1) * D
+
+    if move == "frame_track":
+        # come from the side with more frames, passing two or three of them, and settle on the hero
+        def lateral(p):
+            return (p["centre"] - S).dot(right)
+        left = [p for p in others if -1.2 < lateral(p) < -0.05 and abs(p["centre"].z - S.z) < 0.35]
+        rgt = [p for p in others if 0.05 < lateral(p) < 1.2 and abs(p["centre"].z - S.z) < 0.35]
+        side = -1.0 if len(left) >= len(rgt) else 1.0
+        pool = left if side < 0 else rgt
+        span = max(0.35, min(1.0, max((abs(lateral(p)) for p in pool), default=0.45) + 0.1)) * min(1.4, 0.6 + amount * 0.5)
+        start = right * span * side
+
+        def f(t):
+            e = 1 - (1 - min(1.0, t / 0.88)) ** 2.2       # decelerating track that lands on the hero
+            drift = max(0.0, t - 0.88) / 0.12 * 0.004      # the last moments still breathe
+            off = start * (1 - e) - right * side * drift
+            eye = eye0 + off
+            look = S + off
+            return Pose(eye, look, _soft_focus(photos, look, S))
+        return Program([Segment(0, 1, f)])
+
+    if move == "frame_rack":
+        # a neighbouring frame sits soft and large on one side of the picture; focus pulls past it to the hero
+        nb = min(others, key=lambda p: (p["centre"] - S).length) if others else None
+        if nb is None:
+            return Program([Segment(0, 1, make_move("rack_in", a, D, amount))])
+        to_nb = nb["centre"] - S
+        u = Vector((to_nb.x, to_nb.y, 0.0))
+        u = u.normalized() if u.length > 1e-6 else right
+        hb = Vector((base.x, base.y, 0.0)).normalized()
+        v = (hb * math.cos(math.radians(50)) + u * math.sin(math.radians(50))).normalized()
+        v = elevate(v, 6 + max(0.0, (nb["centre"].z - S.z)) * 20)
+        Dr = D * 0.85
+        eye = S + v * Dr
+        tgt = S + to_nb * 0.18
+        P = nb["centre"]
+
+        def f(t):
+            k = smootherstep((t - 0.3) / 0.35)
+            push = dolly_ease(t) * 0.06 * amount
+            return Pose(eye + (tgt - eye) * push, tgt, P.lerp(S, k))
+        return Program([Segment(0, 1, f)])
+
+    if move == "frame_reflection":
+        # from an angle the glass shows the room; swinging square, the reflection slides off the photo
+        side = 1.0
+        hb = Vector((base.x, base.y, 0.0)).normalized()
+        start_dir = elevate(rot_z(hb, math.radians(38) * side), 9)
+        end_dir = elevate(base, 1)
+
+        def f(t):
+            e = smootherstep(t)
+            d = slerp_dir(start_dir, end_dir, e)
+            dist = D * (1.12 - 0.12 * dolly_ease(t) * min(1.5, amount))
+            return Pose(S + d * dist, S, S)
+        return Program([Segment(0, 1, f)])
+
+    if move == "frame_tilt":
+        # start on a frame higher up the wall (or the top of the wall) and sink down onto the hero
+        above = [p for p in others if p["centre"].z > S.z + 0.12 and abs((p["centre"] - S).dot(right)) < 0.6]
+        if above:
+            top = min(above, key=lambda p: abs((p["centre"] - S).dot(right)) + 0.3 * (p["centre"].z - S.z))["centre"]
+        else:
+            top = a.tilt_from if a.tilt_from is not None else S + Vector((0, 0, 0.45))
+        rise = (top.z - S.z) * min(1.3, 0.55 + 0.4 * amount)
+        eye_hi = eye0 + Vector((0, 0, rise))
+
+        def f(t):
+            e = dolly_ease(t, 0.35)
+            eye = eye_hi.lerp(eye0, e)
+            tgt = top.lerp(S, smootherstep(t * 1.05))
+            return Pose(eye, tgt, _soft_focus(photos, tgt, S, 0.12))
+        return Program([Segment(0, 1, f)])
+
+    return Program([Segment(0, 1, make_move("push_in", a, D, amount))])

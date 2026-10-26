@@ -107,7 +107,8 @@ def layout_for(p: PolaroidSpec) -> Layout:
     if p.fit_photo_aspect:
         pw, ph = (long_mm, long_mm / a) if a >= 1 else (long_mm * a, long_mm)
     else:
-        pw, ph = (long_mm, short_mm) if a >= 1 else (short_mm, long_mm)
+        land = a >= 1 if p.frame_orientation not in ("landscape", "portrait") else p.frame_orientation == "landscape"
+        pw, ph = (long_mm, short_mm) if land else (short_mm, long_mm)
     style = catalog.FRAME_STYLES.get(p.frame_style, catalog.FRAME_STYLES["oak"])
     m = style.moulding_mm
     if p.frame_mat:

@@ -168,6 +168,7 @@ class Location(Option):
     options: tuple = ()
     default_move: str = ""         # multi-photo sets suggest a move that travels between the photos
     multi: bool = False            # built around several photos
+    frames: bool = False           # a set of framed photos (the hero is framed too); the others are for prints
 
 
 LOCATIONS: dict[str, Location] = {l.id: l for l in [
@@ -268,6 +269,31 @@ LOCATIONS: dict[str, Location] = {l.id: l for l in [
                  LocOpt("lamp", "Table lamp", "combo", "auto", AUTO_ON_OFF),
                  LocOpt("net_curtains", "Net curtains", "check", True),
              )),
+    # ---- framed photos
+    Location("hallway_frames", "Hallway wall of family photos",
+             "A long hallway wall hung with framed family photos of every size and style, collected over the "
+             "years. Dado rail, a console table with a lamp and the keys bowl, a runner on the floorboards.",
+             ("wall", "standing"), default_time="golden", default_move="frame_track", multi=True, frames=True,
+             options=(
+                 LocOpt("wall", "Wall", "combo", "paper", (("paper", "Striped wallpaper"), ("paint", "Painted"),
+                                                          ("panel", "Wood panelling below the rail"))),
+                 LocOpt("how_many", "How many photos", "combo", "lots", (("some", "A few"), ("lots", "A whole wall"))),
+                 LocOpt("console", "Console table", "check", True),
+                 LocOpt("lamp", "Table lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("radiator", "Radiator", "check", True),
+                 LocOpt("door", "Doorway into the next room", "check", True),
+             )),
+    Location("sideboard_frames", "Sideboard of family photos",
+             "The top of an old sideboard crowded with framed family photos, the big ones at the back, a lamp, "
+             "a vase of flowers and a lace runner. Wallpaper and a painting behind.",
+             ("standing",), default_time="evening", default_move="frame_rack", multi=True, frames=True,
+             options=(
+                 LocOpt("rows", "Rows of photos", "combo", "2", (("1", "One row"), ("2", "Two rows"))),
+                 LocOpt("lamp", "Table lamp", "combo", "auto", AUTO_ON_OFF),
+                 LocOpt("flowers", "Vase of flowers", "check", True),
+                 LocOpt("runner", "Lace runner", "check", True),
+                 LocOpt("painting", "Painting on the wall", "check", True),
+             )),
 ]}
 
 
@@ -288,6 +314,8 @@ PLACEMENTS = {
     "pile": "On top of a pile of photos",
     "hanging": "Hanging on a line",
     "mounted": "Mounted in the album",
+    "wall": "Hung on the wall",
+    "standing": "Standing on its stand",
 }
 
 TIMES_OF_DAY = {
@@ -344,7 +372,7 @@ WEATHER = {
 @dataclass(frozen=True)
 class Move(Option):
     default_duration: float = 8.0
-    group: str = "classic"      # classic | fun | multi
+    group: str = "classic"      # classic | fun | multi | frames (framed-photo sets only)
 
 
 MOVES: dict[str, Move] = {m.id: m for m in [
@@ -376,6 +404,15 @@ MOVES: dict[str, Move] = {m.id: m for m in [
          "travels, and ends on your photo. Best in the multi-photo locations.", 12.0, "multi"),
     Move("photo_montage", "Photo montage", "Hard cuts between several photos, each with its own slow drift, "
          "ending on your photo. A whole sequence in one shot.", 12.0, "multi"),
+    # framed photos
+    Move("frame_track", "Along the frames", "Tracks slowly along the wall or row of frames, focus sliding from "
+         "frame to frame, and comes to rest on your photo.", 10.0, "frames"),
+    Move("frame_rack", "Past a frame in front", "Looks past a nearer frame (soft, filling one side of the "
+         "picture) and pulls focus from it onto your photo behind.", 8.0, "frames"),
+    Move("frame_reflection", "Through the reflection", "Comes in at an angle with the room reflected in the "
+         "glass, then swings square to the frame so the reflection slides away and the photo appears.", 9.0, "frames"),
+    Move("frame_tilt", "Down the wall", "Starts high on the frames and tilts and sinks down past them to "
+         "settle on your photo.", 9.0, "frames"),
     # fun
     Move("whip_cut", "Whip-pan cut", "Lingers on another photo, whips away into a blur and lands on yours. The "
          "cut is hidden inside the motion blur.", 7.0, "fun"),

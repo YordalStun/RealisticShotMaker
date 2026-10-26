@@ -814,7 +814,10 @@ def make_room_for_frame(anchors):
             gone.add(_group(o.name))
     for g in gone:
         for o in groups.get(g, []):
+            for c in list(o.children):
+                bpy.data.objects.remove(c, do_unlink=True)
             bpy.data.objects.remove(o, do_unlink=True)
+    PLACED_PRINTS[:] = [p for p in PLACED_PRINTS if bpy.data.objects.get(p["name"]) is not None]
     if flat and gone:
         # whatever it was resting on may be gone: let it down onto what's left
         bpy.context.view_layer.update()
@@ -842,3 +845,43 @@ def make_room_for_frame(anchors):
     if gone:
         log_removed = sorted(gone)
         print(f"rsm: made room for the frame (moved {moved.length * 1000:.0f} mm, cleared {', '.join(log_removed)})")
+
+
+def frame_size_m(meta) -> tuple[float, float, float]:
+    """Outer width, height and depth of a framed photo (metres)."""
+    w, h = card_size(meta)
+    return w, h, float(meta.get("thickness_mm", 20.0)) / 1000.0
+
+
+def keep_off_wall(obj, wall_face_y: float, margin: float = 0.003) -> float:
+    """Slide an object (and everything parented to it) out from a wall facing -Y so nothing goes into it.
+    Returns how far it moved."""
+    bpy.context.view_layer.update()
+    ys = [(o.matrix_world @ Vector(c)).y for o in [obj] + list(obj.children_recursive) if o.type == "MESH"
+          for c in o.bound_box]
+    over = max(ys) - (wall_face_y - margin)
+    if over > 0:
+        obj.matrix_world = Matrix.Translation(Vector((0, -over, 0))) @ obj.matrix_world
+        bpy.context.view_layer.update()
+        for p in PLACED_PRINTS:
+            if p["name"] == obj.name:
+                p["centre"] = p["centre"] - Vector((0, over, 0))
+    return max(0.0, over)
+
+
+def hang_frame(meta, name, col, centre: Vector, wall_face_y: float, roll_deg: float = 0.0, tilt_deg: float = 1.5,
+               register: bool = True):
+    """Hang a framed photo on a wall that faces -Y (its surface at wall_face_y), centred on centre.x/centre.z.
+    Hung on a wire, a frame leans out a touch at the top and is rarely perfectly level."""
+    obj = build_card(meta, name, col)
+    w, h, d = frame_size_m(meta)
+    rot = Matrix.Rotation(math.radians(roll_deg), 3, "Y") @ Matrix.Rotation(math.radians(tilt_deg), 3, "X")
+    # the bottom of the back rests on the wall; the top stands off it on the wire
+    front_centre = Vector((centre.x, wall_face_y - d - 0.002, centre.z))
+    obj.matrix_world = Matrix.Translation(front_centre - rot @ Vector((0, 0, h / 2))) @ rot.to_4x4()
+    keep_off_wall(obj, wall_face_y, 0.0015)
+    pic = obj.matrix_world @ image_centre_local(meta)
+    normal = (obj.matrix_world.to_3x3() @ Vector((0, -1, 0))).normalized()
+    if register:
+        register_print(obj, meta, pic, normal, hero=name == "HeroPrint")
+    return obj, pic, normal

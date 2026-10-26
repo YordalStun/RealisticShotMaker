@@ -31,8 +31,11 @@ def _opts(table) -> list[tuple[str, str]]:
 
 SECTIONS: dict[str, list[Field]] = {
     "Scene": [
-        Field("scene.location", "Location", "combo", _opts(catalog.LOCATIONS), group="Where",
-              tip="The set your photo sits in. Each location is a fully built, ray-traced room."),
+        Field("scene.location", "Location", "combo",
+              [(k, catalog.option_name(catalog.LOCATIONS, k) + (" (framed photos)" if v.frames else ""))
+               for k, v in catalog.LOCATIONS.items()], group="Where",
+              tip="The set your photo sits in. Each location is a fully built, ray-traced room. The framed-photo "
+                  "sets turn your photo into a framed print among other frames."),
         Field("scene.placement", "Photo placement", "combo", list(catalog.PLACEMENTS.items()), group="Where"),
         Field("scene.time_of_day", "Time of day", "combo", list(catalog.TIMES_OF_DAY.items()), group="Light",
               tip="Sets the sun height and colour. Evening and night switch the lamps on."),
@@ -56,8 +59,8 @@ SECTIONS: dict[str, list[Field]] = {
         Field("polaroid.photo_offset_x", "Pan left/right", "slider", minimum=-1.0, maximum=1.0, group="Picture"),
         Field("polaroid.photo_offset_y", "Pan up/down", "slider", minimum=-1.0, maximum=1.0, group="Picture"),
         Field("polaroid.print_type", "Photo is", "combo", list(catalog.PRINT_TYPES.items()), group="Print",
-              tip="An instant print, or a photographic print behind glass in a picture frame. On the "
-                  "investigation board, the washing line and in the album it's always a print."),
+              tip="An instant print, or a photographic print behind glass in a picture frame. Framed photos "
+                  "have their own sets (a hallway wall of frames, a sideboard of family photos) and moves."),
         Field("polaroid.frame_style", "Picture frame", "combo", _opts(catalog.FRAME_STYLES), group="Print"),
         Field("polaroid.frame_size", "Print size", "combo", [(k, v[0]) for k, v in catalog.FRAME_SIZES.items()],
               group="Print"),
@@ -97,7 +100,7 @@ SECTIONS: dict[str, list[Field]] = {
     ],
     "Camera": [
         Field("camera.move", "Camera move", "combo",
-              [(k, v.name + (" (several photos)" if v.group == "multi" else ""))
+              [(k, v.name + {"multi": " (several photos)", "frames": " (framed photos)"}.get(v.group, ""))
                for k, v in catalog.MOVES.items() if v.group != "fun"], group="Move",
               tip="Hover over a move to see a preview. More playful moves are in the Fun moves tab."),
         Field("camera.duration", "Total length", "dspin", minimum=2, maximum=60, step=0.5, suffix=" s", group="Move"),

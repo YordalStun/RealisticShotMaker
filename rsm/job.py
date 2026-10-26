@@ -19,7 +19,6 @@ from .polaroid.photos import BUILTIN, get_photo
 from .polaroid.card import layout_for
 from .spec import PolaroidSpec, ShotSpec
 
-NO_FRAMES = ("investigation_board", "photo_line", "photo_album")
 
 BLENDER_DIR = Path(__file__).resolve().parent.parent / "rsm_blender"
 
@@ -99,6 +98,24 @@ def _variant(base: PolaroidSpec, r: random.Random, photo: str | None = None) -> 
     return p
 
 
+FRAME_SET_EXTRAS = {"hallway_frames": 9, "sideboard_frames": 7}
+
+
+def _frame_variant(base: PolaroidSpec, r: random.Random, i: int) -> PolaroidSpec:
+    """Another framed family photo: its own picture, frame, size and shape, collected over the years."""
+    p = _variant(base, r)
+    p.print_type = "framed"
+    p.fit_photo_aspect = False
+    styles = list(catalog.FRAME_STYLES)
+    p.frame_style = r.choice(styles)
+    p.frame_size = r.choices(list(catalog.FRAME_SIZES), weights=[5, 4, 2])[0]
+    p.frame_mat = r.random() < 0.6
+    p.frame_orientation = "portrait" if r.random() < 0.4 else "landscape"
+    p.caption = ""
+    p.dog_ear = p.creases = 0.0
+    return p
+
+
 def _frame_photo(path: Path, kind: str, seed: int, w: int = 900, h: int = 1200):
     r = np_rng(seed)
     photo = get_photo(f"builtin:{kind}", w, h, seed=seed)
@@ -134,9 +151,11 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     if tex_fill > 1.0:
         # a close-up fills the screen with a small part of the print: it needs a lot more texture detail
         cap = 56.0
-    if spec.scene.location in NO_FRAMES and spec.polaroid.print_type == "framed":
-        # pegged on a line, stuck on the board, slipped into an album: those are prints, not framed photos
-        spec = dataclasses.replace(spec, polaroid=dataclasses.replace(spec.polaroid, print_type="instant"))
+    # the set decides: frame sets are full of framed photos, the others are made for prints
+    loc_def = catalog.LOCATIONS.get(spec.scene.location)
+    want = "framed" if loc_def is not None and loc_def.frames else "instant"
+    if spec.polaroid.print_type != want:
+        spec = dataclasses.replace(spec, polaroid=dataclasses.replace(spec.polaroid, print_type=want))
     lay = layout_for(spec.polaroid)
     card_h = lay.frame["outer_mm"][1] if lay.frame else lay.card_mm[1]
     ppm = px_per_mm_for(resolved["height"], tex_fill, card_h, cap=24.0 if preview else cap)
@@ -156,10 +175,16 @@ def build_job(spec: ShotSpec, work_root: str | Path | None = None, preview: bool
     if spec.scene.location == "investigation_board":
         n_extra = 7  # the board is covered in other photos
     n_extra = {"photo_line": 11, "photo_spread": 12, "photo_album": 10}.get(spec.scene.location, n_extra)
+    if want == "framed":
+        n_extra = FRAME_SET_EXTRAS.get(spec.scene.location, 6)
     for i in range(n_extra):
         progress(f"Making other photos ({i + 1}/{n_extra})…")
-        v = _variant(spec.polaroid, r)
-        extras.append(generate(v, min(10.0, ppm * 0.5)).save(work, f"extra{i}"))
+        if want == "framed":
+            v = _frame_variant(spec.polaroid, r, i)
+            extras.append(generate(v, min(7.0, ppm * 0.45)).save(work, f"extra{i}"))
+        else:
+            v = _variant(spec.polaroid, r)
+            extras.append(generate(v, min(10.0, ppm * 0.5)).save(work, f"extra{i}"))
 
     progress("Printing framed photos…")
     frame_photos = [

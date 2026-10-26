@@ -64,9 +64,11 @@ PRESETS = {
     "Interrogation bulb": dict(scene=dict(location="kitchen_table", mood="bare_bulb", dust=0.6),
                                camera=dict(move="locked_off", lens="vintage_prime", body="film_35", fstop=2.8),
                                look=dict(grade="bleach_bypass")),
-    "Grandma's framed photo": dict(scene=dict(location="mantelpiece", time_of_day="evening"),
+    "Grandma's framed photo": dict(scene=dict(location="sideboard_frames", placement="standing",
+                                              time_of_day="evening"),
                                    polaroid=dict(print_type="framed", frame_style="gold", frame_mat=True),
-                                   camera=dict(move="push_in", lens="vintage_prime", body="film_35", fstop=2.8),
+                                   camera=dict(move="frame_rack", lens="vintage_prime", body="film_35", fstop=2.8,
+                                               duration=8.0),
                                    look=dict(grade="warm_nostalgia")),
     "Home movie": dict(scene=dict(location="mantelpiece", time_of_day="evening"),
                        camera=dict(move="handheld", lens="vintage_prime", body="super8", fstop=2.8),
@@ -540,16 +542,43 @@ class MainWindow(QMainWindow):
                 w.setEnabled(on)
 
     def _limit_placements(self):
-        """Only offer the placements the chosen set can do (no 'pinned' on the kitchen table)."""
-        w = self.widgets.get("scene.placement")
+        """Only offer what the chosen set can do: its placements (no 'pinned' on the kitchen table), the sets
+        and frame moves only where there are frames."""
         loc = catalog.LOCATIONS.get(self.spec.scene.location)
-        if w is None or loc is None:
+        if loc is None:
             return
-        model = w.model()
-        for i in range(w.count()):
-            item = model.item(i)
-            if item is not None:
-                item.setEnabled(w.itemData(i) in loc.placements)
+        def limit(path, ok):
+            w = self.widgets.get(path)
+            if w is None:
+                return
+            model = w.model()
+            for i in range(w.count()):
+                item = model.item(i)
+                if item is not None:
+                    item.setEnabled(ok(w.itemData(i)))
+        limit("scene.placement", lambda v: v in loc.placements)
+        limit("camera.move", lambda v: v not in catalog.MOVES or catalog.MOVES[v].group != "frames" or loc.frames)
+
+    def _go_to_location(self, value: str):
+        """Switch set: its own options, time of day and placement, and a move that suits it."""
+        self.spec.scene.location = value
+        self.spec.scene.options = {}
+        loc = catalog.LOCATIONS.get(value)
+        if loc:
+            self.spec.scene.time_of_day = loc.default_time
+            self.spec.polaroid.print_type = "framed" if loc.frames else "instant"
+            if self.spec.scene.placement not in loc.placements:
+                self.spec.scene.placement = loc.placements[0]
+            cur = catalog.MOVES.get(self.spec.camera.move)
+            if cur is not None and cur.group == "frames" and not loc.frames:
+                self.spec.camera.move = "push_in"
+                self.spec.camera.duration = catalog.MOVES["push_in"].default_duration
+                cur = catalog.MOVES["push_in"]
+            if loc.default_move and (cur is None or cur.group not in ("multi", "frames")):
+                # sets made for several photos start on a move that travels between them
+                self.spec.camera.move = loc.default_move
+                self.spec.camera.duration = catalog.MOVES[loc.default_move].default_duration
+        self._load_into_widgets()
 
     def _rebuild_location_options(self):
         """Options that only exist for the chosen location (string on the board, breakfast mess, …)."""
@@ -623,18 +652,13 @@ class MainWindow(QMainWindow):
                 setattr(self.spec.polaroid, k, v)
             self._load_into_widgets()
         if f.path == "scene.location":
-            self.spec.scene.options = {}
-            loc = catalog.LOCATIONS.get(value)
-            if loc:
-                self.spec.scene.time_of_day = loc.default_time
-                if self.spec.scene.placement not in loc.placements:
-                    self.spec.scene.placement = loc.placements[0]
-                cur = catalog.MOVES.get(self.spec.camera.move)
-                if loc.default_move and (cur is None or cur.group != "multi"):
-                    # sets made for several photos start on a move that travels between them
-                    self.spec.camera.move = loc.default_move
-                    self.spec.camera.duration = catalog.MOVES[loc.default_move].default_duration
-            self._load_into_widgets()
+            self._go_to_location(value)
+        if f.path == "polaroid.print_type":
+            loc = catalog.LOCATIONS.get(self.spec.scene.location)
+            want = value == "framed"
+            if loc is None or loc.frames != want:
+                # framed photos have their own sets (and prints theirs): go to the first one that fits
+                self._go_to_location(next(k for k, l in catalog.LOCATIONS.items() if l.frames == want))
         if f.path == "camera.framing":
             # like a DP changing lenses: wider framings get wider lenses (the user can still override)
             self.spec.camera.focal_mm = {"extreme_close": 100.0, "close": 85.0, "medium": 50.0, "wide": 35.0}.get(
@@ -649,6 +673,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("output_dir", value)
         if f.path == "polaroid.print_type":
             self._print_type_fields()
+            self._limit_placements()
         if f.path.startswith("polaroid."):
             self._schedule_polaroid_preview()
         if not f.path.startswith("output."):
