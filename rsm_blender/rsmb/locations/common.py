@@ -233,7 +233,8 @@ PLACED_PRINTS: list[dict] = []
 
 def register_print(obj, meta, centre: Vector, normal: Vector, hero: bool = False):
     PLACED_PRINTS.append(dict(name=obj.name, centre=centre.copy(), normal=normal.copy(),
-                              height=float(meta["card_mm"][1]) / 1000.0, hero=hero))
+                              height=float(meta["card_mm"][1]) / 1000.0, hero=hero,
+                              image=(meta.get("files") or {}).get("color", "")))
 
 
 _NOT_A_SURFACE = ("Haze", "DustMotes", "Steam", "Portal", "Fairy", "Cobweb", "String")

@@ -64,6 +64,8 @@ SECTIONS: dict[str, list[Field]] = {
         Field("polaroid.frame_style", "Picture frame", "combo", _opts(catalog.FRAME_STYLES), group="Print"),
         Field("polaroid.frame_size", "Print size", "combo", [(k, v[0]) for k, v in catalog.FRAME_SIZES.items()],
               group="Print"),
+        Field("polaroid.frame_orientation", "Photo shape", "combo",
+              [("auto", "Follow the picture"), ("landscape", "Landscape"), ("portrait", "Portrait")], group="Print"),
         Field("polaroid.frame_mat", "Card mount around the photo", "check", group="Print",
               tip="A cream mount board with a bevelled window between the frame and the photo."),
         Field("polaroid.fit_photo_aspect", "Fit to the picture's shape", "check", group="Print",

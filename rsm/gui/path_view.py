@@ -62,6 +62,7 @@ class PathView(QWidget):
         self.through_camera = False
         self.highlight = -1            # the shot being edited: drawn bolder
         self.hero_img: QImage | None = None
+        self.imgs: dict[int, QImage] = {}     # every photo's picture, so the wall of frames reads in 3D
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumHeight(240)
         self.setMouseTracking(False)
@@ -75,11 +76,15 @@ class PathView(QWidget):
         self.data = data
         self.frame = min(self.frame, len(data["frames"]) - 1)
         self.hero_img = None
-        for p in data.get("prints", []):
-            if p.get("hero") and p.get("image") and Path(p["image"]).exists():
+        self.imgs = {}
+        for i, p in enumerate(data.get("prints", [])):
+            if p.get("image") and Path(p["image"]).exists():
                 img = QImage(p["image"])
                 if not img.isNull():
-                    self.hero_img = img.scaledToWidth(min(512, img.width()), Qt.SmoothTransformation)
+                    img = img.scaledToWidth(min(512 if p.get("hero") else 192, img.width()), Qt.SmoothTransformation)
+                    self.imgs[i] = img
+                    if p.get("hero"):
+                        self.hero_img = img
         if first:
             self.reset_view()
         self.update()
@@ -170,22 +175,23 @@ class PathView(QWidget):
                 depth = sum(q[1] for q in proj) / 4
                 col = QColor.fromRgbF(*[min(1.0, max(0.0, c * shade)) for c in b["col"]])
                 polys.append((depth, QPolygonF([q[0] for q in proj]), col, b.get("room")))
-        for pr in self.data.get("prints", []):
+        for i, pr in enumerate(self.data.get("prints", [])):
             proj = [self._project(basis, tuple(c)) for c in pr["quad"]]
             if any(q[0] is None for q in proj):
                 continue
             depth = sum(q[1] for q in proj) / 4 - 0.002
-            polys.append((depth, QPolygonF([q[0] for q in proj]), "hero" if pr.get("hero") else "print", False))
+            polys.append((depth, QPolygonF([q[0] for q in proj]), "hero" if pr.get("hero") else "print", i))
         polys.sort(key=lambda x: -x[0])
-        for depth, poly, col, room in polys:
+        for depth, poly, col, extra in polys:     # extra: room flag for boxes, index for photos
             if col == "hero":
                 self._draw_hero(p, poly)
             elif col == "print":
                 p.setPen(QPen(QColor("#2a2622"), 1))
                 p.setBrush(QBrush(QColor("#ece6da")))
                 p.drawPolygon(poly)
+                self._draw_image(p, poly, self.imgs.get(extra))
             else:
-                p.setPen(QPen(col.darker(140), 0.6) if not room else QPen(Qt.NoPen))
+                p.setPen(QPen(col.darker(140), 0.6) if not extra else QPen(Qt.NoPen))
                 p.setBrush(QBrush(col))
                 p.drawPolygon(poly)
         if not self.through_camera:
@@ -198,15 +204,19 @@ class PathView(QWidget):
         p.setPen(QPen(QColor("#f4ece0"), 1.5))
         p.setBrush(QBrush(QColor("#f4ece0")))
         p.drawPolygon(poly)
-        if self.hero_img is not None:
-            src = QPolygonF([QPointF(0, self.hero_img.height()), QPointF(self.hero_img.width(), self.hero_img.height()),
-                             QPointF(self.hero_img.width(), 0), QPointF(0, 0)])
-            t = QTransform()
-            if QTransform.quadToQuad(src, poly, t):
-                p.save()
-                p.setTransform(t, True)
-                p.drawImage(0, 0, self.hero_img)
-                p.restore()
+        self._draw_image(p, poly, self.hero_img)
+
+    def _draw_image(self, p: QPainter, poly: QPolygonF, img: QImage | None):
+        if img is None:
+            return
+        src = QPolygonF([QPointF(0, img.height()), QPointF(img.width(), img.height()),
+                         QPointF(img.width(), 0), QPointF(0, 0)])
+        t = QTransform()
+        if QTransform.quadToQuad(src, poly, t):
+            p.save()
+            p.setTransform(t, True)
+            p.drawImage(0, 0, img)
+            p.restore()
 
     def _draw_path(self, p: QPainter, basis):
         frames = self.data["frames"]

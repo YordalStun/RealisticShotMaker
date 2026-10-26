@@ -71,7 +71,7 @@ def _prints(job: dict):
         up = n.cross(right).normalized()
         quad = sorted(front, key=lambda c: math.atan2((c - ctr).dot(up), (c - ctr).dot(right)))
         out.append({"quad": [[round(v, 4) for v in c] for c in quad], "hero": bool(p.get("hero")),
-                    "image": job["polaroid"]["files"].get("color", "") if p.get("hero") else ""})
+                    "image": p.get("image") or (job["polaroid"]["files"].get("color", "") if p.get("hero") else "")})
     return out
 
 

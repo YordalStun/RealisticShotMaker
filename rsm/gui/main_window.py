@@ -289,6 +289,9 @@ class MainWindow(QMainWindow):
                 form = QFormLayout(box)
                 form.setLabelAlignment(Qt.AlignRight)
                 groups[g] = form
+                if not hasattr(self, "_group_boxes"):
+                    self._group_boxes = {}
+                self._group_boxes[(section, g)] = box
                 lay.addWidget(box)
             w = self._make_widget(f)
             if f.tip:
@@ -534,12 +537,23 @@ class MainWindow(QMainWindow):
     def _print_type_fields(self):
         """Frame settings only matter for a framed photo; film and border colour only for an instant print."""
         framed = self.spec.polaroid.print_type == "framed"
-        for path, on in (("polaroid.frame_style", framed), ("polaroid.frame_size", framed),
-                         ("polaroid.frame_mat", framed), ("polaroid.film", not framed),
-                         ("polaroid.frame_color", not framed)):
-            w = self.widgets.get(path)
-            if w is not None:
+        only_framed = ("frame_style", "frame_size", "frame_orientation", "frame_mat")
+        only_instant = ("film", "frame_color", "gloss", "caption", "caption_hand", "caption_pen", "caption_color",
+                        "chemical_edge", "creases", "dog_ear", "curl", "tape", "pin_hole")
+        for key, on in [(k, framed) for k in only_framed] + [(k, not framed) for k in only_instant]:
+            w = self.widgets.get(f"polaroid.{key}")
+            if w is None:
+                continue
+            lay = w.parentWidget().layout() if w.parentWidget() is not None else None
+            if isinstance(lay, QFormLayout):
+                lay.setRowVisible(w, on)      # hide what doesn't apply rather than grey it out
+            else:
                 w.setEnabled(on)
+        # a group with nothing left in it (the caption, for a framed photo) goes too
+        for box in getattr(self, "_group_boxes", {}).values():
+            lay = box.layout()
+            if isinstance(lay, QFormLayout):
+                box.setVisible(any(lay.isRowVisible(r) for r in range(lay.rowCount())))
 
     def _limit_placements(self):
         """Only offer what the chosen set can do: its placements (no 'pinned' on the kitchen table), the sets
