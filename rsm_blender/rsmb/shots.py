@@ -362,19 +362,24 @@ def _frame_move(move: str, a: Anchors, D: float, amount: float, base: Vector, ri
         return Program([Segment(0, 1, f)])
 
     if move == "frame_rack":
-        # a neighbouring frame sits soft and large on one side of the picture; focus pulls past it to the hero
-        nb = min(others, key=lambda p: (p["centre"] - S).length) if others else None
+        # a neighbouring frame in the same row sits soft and large on one side of the picture; focus pulls
+        # past it to the hero
+        def lateral(p):
+            return (p["centre"] - S).dot(right)
+
+        def depth(p):
+            return (p["centre"] - S).dot(base)
+        same_row = [p for p in others if 0.1 < abs(lateral(p)) < 0.7 and abs(depth(p)) < 0.12
+                    and abs(p["centre"].z - S.z) < 0.3]
+        pool = same_row or others
+        nb = min(pool, key=lambda p: abs(lateral(p)) + 2 * abs(depth(p))) if pool else None
         if nb is None:
             return Program([Segment(0, 1, make_move("rack_in", a, D, amount))])
-        to_nb = nb["centre"] - S
-        u = Vector((to_nb.x, to_nb.y, 0.0))
-        u = u.normalized() if u.length > 1e-6 else right
+        side = 1.0 if lateral(nb) >= 0 else -1.0
         hb = Vector((base.x, base.y, 0.0)).normalized()
-        v = (hb * math.cos(math.radians(50)) + u * math.sin(math.radians(50))).normalized()
-        v = elevate(v, 6 + max(0.0, (nb["centre"].z - S.z)) * 20)
-        Dr = D * 0.85
-        eye = S + v * Dr
-        tgt = S + to_nb * 0.18
+        v = elevate((hb * math.cos(math.radians(46)) + right * side * math.sin(math.radians(46))).normalized(), 5)
+        eye = S + v * D * 0.85
+        tgt = S + (nb["centre"] - S) * 0.3
         P = nb["centre"]
 
         def f(t):
