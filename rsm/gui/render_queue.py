@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox,
                                QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from .. import catalog
+from .. import catalog, power
 from ..estimate import estimate
 from ..spec import ShotSpec
 from .workers import JobThread, RenderJob
@@ -181,6 +181,8 @@ class RenderQueue(QObject):
 
     def _touch(self):
         self.save()
+        # no sleeping in the middle of a render; normal sleep comes back once nothing is rendering
+        power.keep_awake(self.running() is not None)
         self.changed.emit()
 
     # ------------------------------------------------------------------ running
@@ -246,6 +248,7 @@ class RenderQueue(QObject):
             r.state = STOPPED
             r.message = "Stopped when the program closed. Resume to carry on."
         self.save()
+        power.keep_awake(False)
 
 
 class QueuePanel(QWidget):
@@ -407,6 +410,8 @@ class QueuePanel(QWidget):
             parts.append(f"{len(stopped)} stopped")
         if done:
             parts.append(f"{len(done)} finished")
+        if self.q.running() is not None and sys.platform == "win32":
+            parts.append("PC kept awake while rendering")
         self.summary.setText("   ".join(parts) if parts else "Nothing queued. Set up a shot and press Add to queue.")
 
     def _update_buttons(self):
