@@ -26,31 +26,41 @@ def _box(a, r, axis):
     p = np.pad(a, pad, mode="edge")
     c = np.cumsum(p, axis=axis, dtype=np.float32)
     n = a.shape[axis]
-    hi = np.take(c, np.arange(2 * r + 1, 2 * r + 1 + n), axis=axis)
-    lo = np.take(c, np.arange(0, n), axis=axis)
-    return (hi - lo) / (2 * r + 1)
+    # running sum by slicing (views) rather than gathering with index arrays: same numbers, far less copying
+    hi = [slice(None)] * a.ndim
+    lo = [slice(None)] * a.ndim
+    hi[axis] = slice(2 * r + 1, 2 * r + 1 + n)
+    lo[axis] = slice(0, n)
+    out = c[tuple(hi)] - c[tuple(lo)]
+    out /= 2 * r + 1
+    return out
+
+
+def _lerp_axis(a, n_out, axis):
+    """Linear resample along one axis (pixel centres aligned, edges clamped)."""
+    n_in = a.shape[axis]
+    pos = (np.arange(n_out) + 0.5) * n_in / n_out - 0.5
+    i0 = np.clip(np.floor(pos).astype(int), 0, n_in - 1)
+    i1 = np.clip(i0 + 1, 0, n_in - 1)
+    f = np.clip(pos - i0, 0, 1).astype(np.float32)
+    shape = [1] * a.ndim
+    shape[axis] = n_out
+    f = f.reshape(shape)
+    a0 = np.take(a, i0, axis=axis)
+    a1 = np.take(a, i1, axis=axis)
+    return a0 + (a1 - a0) * f
 
 
 def _resize_nn(a, h, w):
-    """Bilinear resize via numpy (works for 2D/3D)."""
+    """Bilinear resize via numpy (works for 2D/3D). Done one axis at a time, the cheap way round: shrinking
+    works on the big image's rows once, growing does the small axis first."""
     H, W = a.shape[:2]
-    ys = (np.arange(h) + 0.5) * H / h - 0.5
-    xs = (np.arange(w) + 0.5) * W / w - 0.5
-    y0 = np.clip(np.floor(ys).astype(int), 0, H - 1)
-    x0 = np.clip(np.floor(xs).astype(int), 0, W - 1)
-    y1 = np.clip(y0 + 1, 0, H - 1)
-    x1 = np.clip(x0 + 1, 0, W - 1)
-    fy = np.clip(ys - y0, 0, 1).astype(np.float32)
-    fx = np.clip(xs - x0, 0, 1).astype(np.float32)
-    if a.ndim == 3:
-        fy = fy[:, None, None]
-        fx = fx[None, :, None]
+    a = a.astype(np.float32, copy=False)
+    if h * W <= H * w:
+        out = _lerp_axis(_lerp_axis(a, h, 0), w, 1)
     else:
-        fy = fy[:, None]
-        fx = fx[None, :]
-    top = a[y0][:, x0] * (1 - fx) + a[y0][:, x1] * fx
-    bot = a[y1][:, x0] * (1 - fx) + a[y1][:, x1] * fx
-    return (top * (1 - fy) + bot * fy).astype(np.float32)
+        out = _lerp_axis(_lerp_axis(a, w, 1), h, 0)
+    return out.astype(np.float32, copy=False)
 
 
 def blur(a, sigma):

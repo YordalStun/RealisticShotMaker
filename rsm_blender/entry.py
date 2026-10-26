@@ -210,17 +210,37 @@ def develop_frames(job: dict, frames: list[int]):
     png_dir = job["paths"]["frames"]
     os.makedirs(png_dir, exist_ok=True)
     lab = None
-    for i, f in enumerate(frames):
-        src = os.path.join(exr_dir, f"frame_{f:05d}.exr")
-        if not os.path.exists(src):
-            continue
-        dst = os.path.join(png_dir, f"frame_{f:05d}.png")
-        lin = load_exr(src)
-        if lab is None:
-            lab = filmlab.FilmLab(params, lin.shape[0], lin.shape[1], seed=int(job["spec"]["scene"].get("seed", 7)))
-        out = lab.process(lin, f - int(res["frame_start"]), float(res["fps"]))
-        filmlab.write_png16(dst, out)
-        log("frame_developed", frame=f, index=i, total=len(frames), path=dst)
+    # the film lab is pure numpy (which lets go of Python's lock while it works), so once the first frame has
+    # set the shot's exposure, several frames can develop at once. EXRs are read here, on the main thread
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    workers = max(1, min(3, (os.cpu_count() or 2) // 2))
+    slots = threading.Semaphore(workers + 1)       # bounded: 8K frames are big
+
+    def develop(i, f, lin, dst):
+        try:
+            out = lab.process(lin, f - int(res["frame_start"]), float(res["fps"]))
+            filmlab.write_png16(dst, out)
+            log("frame_developed", frame=f, index=i, total=len(frames), path=dst)
+        finally:
+            slots.release()
+    futures = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, f in enumerate(frames):
+            src = os.path.join(exr_dir, f"frame_{f:05d}.exr")
+            if not os.path.exists(src):
+                continue
+            dst = os.path.join(png_dir, f"frame_{f:05d}.png")
+            slots.acquire()
+            lin = load_exr(src)
+            if lab is None:
+                lab = filmlab.FilmLab(params, lin.shape[0], lin.shape[1],
+                                      seed=int(job["spec"]["scene"].get("seed", 7)))
+                develop(i, f, lin, dst)              # the first frame meters the exposure for the rest
+                continue
+            futures.append(pool.submit(develop, i, f, lin, dst))
+    for fu in futures:
+        fu.result()                                  # surface any error
 
 
 def main():
@@ -265,35 +285,81 @@ def main():
     only = [int(x) for x in args.frames.split(",")] if args.frames else None
     frames = only or list(range(fs, fe + 1))
     exr_dir = job["paths"]["exr"]
-    # render and develop as we go so the app can show finished frames early
+    # render and develop as we go so the app can show finished frames early. Developing (grain, halation,
+    # the grade, writing the 16-bit file) runs on the CPU in the background while the next frame renders,
+    # so the graphics card never waits for it
     os.makedirs(exr_dir, exist_ok=True)
+    os.makedirs(job["paths"]["frames"], exist_ok=True)
     total = len(frames)
     t_start = time.time()
-    lab = None
-    for i, f in enumerate(frames):
-        exr = os.path.join(exr_dir, f"frame_{f:05d}.exr")
-        png = os.path.join(job["paths"]["frames"], f"frame_{f:05d}.png")
-        if os.path.exists(png) and os.path.getsize(png) > 0:
-            log("frame_skip", frame=f, index=i, total=total)
-            continue
-        if not (os.path.exists(exr) and os.path.getsize(exr) > 0):
-            scene.frame_set(f)
-            scene.render.filepath = exr
-            log("frame_start", frame=f, index=i, total=total)
-            t0 = time.time()
-            bpy.ops.render.render(write_still=True)
-            log("frame_rendered", frame=f, index=i, total=total, seconds=round(time.time() - t0, 2),
-                elapsed=round(time.time() - t_start, 1))
-        lin = load_exr(exr)
-        if lab is None:
-            lab = filmlab.FilmLab(job["filmlab"], lin.shape[0], lin.shape[1],
-                                  seed=int(job["spec"]["scene"].get("seed", 7)))
-        os.makedirs(job["paths"]["frames"], exist_ok=True)
-        developed = lab.process(lin, f - fs, float(res["fps"]))
-        filmlab.write_png16(png, developed)
-        thumb = write_thumb(job, f, developed)
-        log("frame_done", frame=f, index=i, total=total, path=png, thumb=thumb, elapsed=round(time.time() - t_start, 1))
+    lab_dev = Developer(job, fs, float(res["fps"]), t_start, total)
+    try:
+        for i, f in enumerate(frames):
+            exr = os.path.join(exr_dir, f"frame_{f:05d}.exr")
+            png = os.path.join(job["paths"]["frames"], f"frame_{f:05d}.png")
+            if os.path.exists(png) and os.path.getsize(png) > 0:
+                log("frame_skip", frame=f, index=i, total=total)
+                continue
+            if not (os.path.exists(exr) and os.path.getsize(exr) > 0):
+                scene.frame_set(f)
+                scene.render.filepath = exr
+                log("frame_start", frame=f, index=i, total=total)
+                t0 = time.time()
+                bpy.ops.render.render(write_still=True)
+                log("frame_rendered", frame=f, index=i, total=total, seconds=round(time.time() - t0, 2),
+                    elapsed=round(time.time() - t_start, 1))
+            lab_dev.submit(i, f, load_exr(exr), png)
+    finally:
+        lab_dev.finish()
     log("render_done", total=total, seconds=round(time.time() - t_start, 1))
+
+
+class Developer:
+    """Develops rendered frames on a background thread, in order (the film lab meters exposure on the first
+    frame, so the order matters). At most two frames wait, so memory stays bounded at 8K."""
+
+    def __init__(self, job: dict, frame_start: int, fps: float, t_start: float, total: int):
+        import queue
+        import threading
+        self.job, self.fs, self.fps, self.t_start, self.total = job, frame_start, fps, t_start, total
+        self.q = queue.Queue(maxsize=2)
+        self.error = None
+        self.lab = None
+        self.thread = threading.Thread(target=self._run, name="develop", daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while True:
+            item = self.q.get()
+            if item is None:
+                return
+            if self.error is not None:
+                continue
+            try:
+                self._develop(*item)
+            except BaseException as exc:      # reported from the main thread
+                self.error = exc
+
+    def _develop(self, i, f, lin, png):
+        if self.lab is None:
+            self.lab = filmlab.FilmLab(self.job["filmlab"], lin.shape[0], lin.shape[1],
+                                       seed=int(self.job["spec"]["scene"].get("seed", 7)))
+        developed = self.lab.process(lin, f - self.fs, self.fps)
+        filmlab.write_png16(png, developed)
+        thumb = write_thumb(self.job, f, developed)
+        log("frame_done", frame=f, index=i, total=self.total, path=png, thumb=thumb,
+            elapsed=round(time.time() - self.t_start, 1))
+
+    def submit(self, i, f, lin, png):
+        if self.error is not None:
+            raise self.error
+        self.q.put((i, f, lin, png))
+
+    def finish(self):
+        self.q.put(None)
+        self.thread.join()
+        if self.error is not None:
+            raise self.error
 
 
 if __name__ == "__main__":

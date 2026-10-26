@@ -4,16 +4,21 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 
 import bpy
 
+_log_lock = threading.Lock()
+
 
 def log(kind: str, **data):
-    """Machine-readable progress line for the app (one JSON object per line)."""
+    """Machine-readable progress line for the app (one JSON object per line). Safe from any thread."""
     data["kind"] = kind
-    sys.stdout.write("RSM " + json.dumps(data) + "\n")
-    sys.stdout.flush()
+    line = "RSM " + json.dumps(data) + "\n"
+    with _log_lock:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def enable_gpu(preference: str = "auto") -> str:
@@ -116,8 +121,10 @@ def configure(resolved: dict, cam_spec: dict, body: dict, scene=None):
         pass
     # persistent data: keep the BVH between frames
     r.use_persistent_data = True
+    # tiles only exist to save graphics memory; every pixel comes out the same either way. 4K and below
+    # render in one piece (no per-tile overhead), 8K in four
     c.use_auto_tile = True
-    c.tile_size = 2048
+    c.tile_size = 4096
     # linear scene-referred output; the film lab does the look afterwards
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.look = "None"
